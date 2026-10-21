@@ -55,4 +55,4 @@ docker compose --env-file .env -f compose.yaml -f compose.dev.yaml up --build ap
 
 `.env` 中保持 `MONITOR_ENABLED=false`。容器内数据库固定 `/data/stock-watch.db`，Linux bind 目录需允许 UID/GID 10001 写入。不要通过移除只读根文件系统或其他安全限制解决目录权限。
 
-本轮范围是阶段 0～2。本地验证状态见 [进度](docs/PROGRESS.md)，微信联调见 [微信配置](docs/WECOM_SETUP.md)，数据语义见 [架构](docs/ARCHITECTURE.md)。首次服务器部署与 Git 自动部署分别属于后续阶段 3/4。
+阶段 0～2 已完成本地模拟验收，阶段 3 已完成首次服务器部署及备份/容器重建验证；真实微信与模型联调另行验收。阶段 4 使用 [GitHub 构建与镜像部署](docs/GITHUB_DEPLOY.md)，服务器只拉取已构建镜像。实际执行状态见 [进度](docs/PROGRESS.md)，微信联调见 [微信配置](docs/WECOM_SETUP.md)，数据语义见 [架构](docs/ARCHITECTURE.md)。

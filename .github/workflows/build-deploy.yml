@@ -1,0 +1,160 @@
+name: Test, build and deploy
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -e '.[dev]'
+      - name: Run offline tests
+        run: python -m pytest -q
+      - name: Check deployment script syntax
+        run: bash -n scripts/deploy-image.sh
+
+  image:
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.name.outputs.image }}
+      digest: ${{ steps.build.outputs.digest }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set lowercase image name
+        id: name
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "image=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and publish immutable release
+        id: build
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.name.outputs.image }}:sha-${{ github.sha }}
+          build-args: BUILD_SHA=${{ github.sha }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Smoke test the actual published image without network access
+        env:
+          IMAGE: ${{ steps.name.outputs.image }}@${{ steps.build.outputs.digest }}
+        run: |
+          docker pull "$IMAGE"
+          docker run --rm --network none --read-only --tmpfs /tmp:mode=1777 \
+            -e MONITOR_ENABLED=false -e DATA_DIR=/tmp/data \
+            -e DATABASE_PATH=/tmp/data/stock-watch.db \
+            "$IMAGE" python -m stock_watch init-db
+          docker run --rm --network none "$IMAGE" \
+            python -c 'import sqlite3; print("Container SQLite:", sqlite3.sqlite_version)'
+
+  deploy:
+    # Enable only after first-server acceptance and repository credentials exist.
+    if: vars.DEPLOY_ENABLED == 'true'
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    concurrency:
+      group: stock-watch-production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Skip releases superseded by a newer main commit
+        id: current
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/main" --jq .object.sha)
+          if [[ "$head" == "$GITHUB_SHA" ]]; then
+            echo 'deploy=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'A newer main commit exists; skipping this server update.'
+          fi
+      - name: Transfer release and update server
+        if: steps.current.outputs.deploy == 'true'
+        shell: bash
+        env:
+          DEPLOY_HOST: ${{ vars.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ vars.DEPLOY_USER || 'root' }}
+          DEPLOY_PORT: ${{ vars.DEPLOY_PORT || '22' }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GHCR_USER: ${{ github.actor }}
+          IMAGE: ${{ needs.image.outputs.image }}@${{ needs.image.outputs.digest }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$DEPLOY_HOST" =~ ^[a-zA-Z0-9][a-zA-Z0-9.-]*$ ]]
+          [[ "$DEPLOY_USER" == root ]]
+          [[ "$DEPLOY_PORT" =~ ^[0-9]{1,5}$ ]]
+          ((10#$DEPLOY_PORT >= 1 && 10#$DEPLOY_PORT <= 65535))
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$GHCR_USER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(\[bot\])?$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ -n "$DEPLOY_SSH_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]]
+          key="$RUNNER_TEMP/stock-watch-deploy-key"
+          known="$RUNNER_TEMP/stock-watch-known-hosts"
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$known"
+          unset DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS
+          ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes
+                    -o UserKnownHostsFile="$known" -o IdentitiesOnly=yes
+                    -o ConnectTimeout=15 -o ServerAliveInterval=15
+                    -o ServerAliveCountMax=3 -i "$key")
+          remote="$DEPLOY_USER@$DEPLOY_HOST"
+          release="/srv/stock-watch/image-releases/$GITHUB_SHA"
+          auth="$release/.docker-auth-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+          cleanup() {
+            ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
+              "rm -f '$auth/config.json'; rmdir '$auth' 2>/dev/null || true" || true
+            rm -f "$key" "$known"
+          }
+          trap cleanup EXIT
+          ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
+            "umask 077; mkdir -p '$release/scripts' '$auth'"
+          scp "${ssh_args[@]}" -P "$DEPLOY_PORT" compose.registry.yaml "$remote:$release/"
+          scp "${ssh_args[@]}" -P "$DEPLOY_PORT" scripts/deploy-image.sh "$remote:$release/scripts/"
+          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
+            "docker --config '$auth' login ghcr.io --username '$GHCR_USER' --password-stdin >/dev/null"
+          unset GHCR_TOKEN
+          ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
+            "DOCKER_CONFIG='$auth' bash '$release/scripts/deploy-image.sh' '$IMAGE' '$GITHUB_SHA'"

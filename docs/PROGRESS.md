@@ -45,12 +45,12 @@
 - 自动审批拒绝了常驻普通worker启动：即使MONITOR_ENABLED=false，普通worker仍可能消费正式队列并调用DeepSeek/投递企业微信，与本轮不调用真实外部接口的边界不符。已采用只启动API、隔离模拟worker的安全替代，无需为本轮继续开发操作平台后台。
 - 本次启动是本地开发服务，不是生产WSGI/容器/HTTPS部署；文档后续提交不改变当前运行的业务代码SHA。
 
-## 明确不在本轮执行
+## 阶段 0～2 当时的执行边界（历史记录）
 
 - 不部署生产服务器，不启用真实定时监控，不停用旧云函数，不发送真实微信消息，不消耗 DeepSeek 额度。
 - 阶段 3/4 的真实服务器安装、迁移切换和 Git 自动部署留待后续阶段。
 
-## 待真实环境验证
+## 阶段 0～2 结束时的待验证项（历史记录）
 
 - 企业微信 CorpID/AgentID/Secret、回调 Token/AES Key、管理员与测试收件人。
 - HTTPS 域名、企业微信后台回调保存、客户端双向消息、DeepSeek 与东方财富真实网络表现。
@@ -59,3 +59,68 @@
 - 阶段3首次部署入口/发行包与完整服务器实操手册、阶段4bare Git/部署队列/状态/回滚脚本未进入本轮实施；`docs/DEPLOY_FIRST_TIME.md`明确为后续边界说明。
 
 后续账号后台页面、字段及预期结果见 `docs/WECOM_SETUP.md`；当前无需为离线开发操作平台后台。官方资料核对见 `docs/REFERENCES.md`。
+
+## 阶段 3：首次服务器部署（2026-10-21）
+
+操作者在本聊天推进首次部署，并明确提出由助手通过本机现有服务器连接接手。普通 Windows 沙箱进程启动持续失败；经沙箱外只读检查恢复命令通道，使用已有 `stock-server` SSH 配置与严格主机密钥校验连接，实际主机名为 `vultr`。未读取或输出私钥、真实账号密钥或完整消息。
+
+### 本轮新增与执行范围
+
+- 新增 `compose.host-nginx.yaml`、`deploy/nginx/stock-watch.conf`、`scripts/deploy-host-nginx.sh`、`scripts/package-release.py`，更新首次部署说明。原 Compose 的 Caddy 模式保留；本次服务器使用已有宿主机 Nginx，app仅绑定127.0.0.1:8000。
+- 服务器确认 Ubuntu20.04.6/x86_64、Docker28.1.1、Compose2.35.1；已有 Nginx/MySQL/trojan-go。仅修改 stock-watch 专用站点并留备份，原域名配置及这些服务保留，未重启整机。
+- 操作者已执行 HTTP 校验和 acme.sh 签发。本轮直接接手启用 HTTPS/HTTP跳转及应用反向代理，证书副本路径 `/srv/platform/certs/stock.janettepa.uk/`；检测到 root acme.sh `--cron` 任务且 cron active。已验证签发/安装/reload，未强制续期演练。
+- 服务器发布目录 `/srv/stock-watch/releases/aa24ee28ab3b69fd133c3b0cca3f3176012ad6f2`，`current`指向该目录；配置 `/srv/stock-watch/shared/.env` 为0600，数据 `/srv/stock-watch/shared/data/` 为UID/GID10001持久目录。
+- 服务器创建空外部凭证模板，仅生成本服务随机 PUSH_TOKEN 并写入私有文件，不输出其值；企业微信和DeepSeek凭证尚未填写。MONITOR_ENABLED=false，正式outbox/管理任务/监控轮次为空，未访问真实新闻/模型或发送真实微信。
+- 镜像 `stock-watch:aa24ee28ab3b69fd133c3b0cca3f3176012ad6f2`，实际镜像ID `sha256:e0a01819f8f99750b72441a780ce12021c0330f8a67e9686ea8ac12011d4d4ef`。Python3.12镜像内SQLite3.46.1，schema2，journal=delete。
+- 白名单发行包 SHA256 `0a009a3e07ff98b478e3604bf8ea249bb9463fd9690dd81a07262bf8e3f45a9e`；归档manifest记录代码SHA和部署文件SHA，部署文件尚未提交，因此代码SHA不代表部署配置也已提交。首次SHA256侧文件因Windows换行校验失败，在解包/执行前停止；已修正为LF并重新打包，实际校验OK后执行。
+
+### 实际命令及验收
+
+| 实际执行 | 结果 |
+| --- | --- |
+| `ssh -o BatchMode=yes -o StrictHostKeyChecking=yes stock-server hostname` | 返回vultr，现有SSH密钥登录成功 |
+| `.venv\Scripts\python.exe -m pytest -q` | 部署前及交付前均151 passed，完全离线 |
+| `.venv\Scripts\python.exe scripts/package-release.py`；`scp`上传归档和`.sha256`；服务器`sha256sum -c` | 白名单归档校验OK，无.env/数据库/私钥/日志/legacy |
+| 发布目录下 `bash -n scripts/deploy-host-nginx.sh` 和 `bash scripts/deploy-host-nginx.sh aa24ee28ab3b69fd133c3b0cca3f3176012ad6f2` | shell与Compose解析、镜像构建、初始化、空队列检查、app/worker就绪、Nginx配置及HTTPS验证通过 |
+| 本机 `Invoke-RestMethod https://stock.janettepa.uk/health`、`.../ready`；`curl.exe -sSI http://stock.janettepa.uk/deployment-check` | 公网HTTPS证书校验成功，health/ready均code0，SHA一致；HTTP301指向对应HTTPS路径 |
+| 服务器 `bash /srv/stock-watch/incoming/host-acceptance.sh` | SQLite在线备份、临时目录恢复、integrity_check和schema/config_version比对通过；随后两个容器force-recreate并重新healthy，持久元数据一致 |
+| `docker exec stock-watch-worker-1 python -m stock_watch worker-health`、`status` | worker ready；schema2/config_version1；monitor=false；outbox/tasks/runs为空 |
+| 指定字段`docker inspect`与文件权限检查 | app/worker均10001:10001、readonly=true、内存上限192MiB、restart=unless-stopped；环境文件0600 |
+| `systemctl is-active nginx mysql trojan-go cron` | 四者均active |
+| `docker stats --no-stream`、`free -h`、`df -h /` | 一次采样app45.08MiB/worker20.16MiB，主机available481MiB、磁盘剩余6.2GB；不是负载峰值测量 |
+
+实际备份 `/srv/stock-watch/shared/data/backups/acceptance-20261021T143505Z.db`，文件名使用UTC。容器重建前后schema2、config_version1、outbox/tasks/seen均0；恢复测试使用独立临时数据库，没有覆盖正式库。
+
+Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但未把swap限制或负载压力验收标为完成。原宿主机swap和其他服务不变。
+
+### 剩余项与并行修改
+
+- 真实企业微信应用/管理员/指定成员/回调后台保存、DeepSeek及新闻网络联调，尚未执行。需要密钥只写共享.env并重建容器，不能粘贴进聊天或提交。
+- 自动监控保持关闭；旧系统是否仍在运行、最终seen迁移及启用切换仍需操作者确认。没有停用旧云函数。
+- 容器重建、首次备份与隔离恢复已通过；整机重启、长期负载峰值、异地备份、自动续期和数据库回滚演练尚未验证。
+- 本轮未实施或验证Git自动部署。执行期间本地出现非本轮创建的`.github/`和`compose.registry.yaml`，保持原样，未加入本次发行包，也未提交任何文件。
+
+## 阶段 4：GitHub 构建与镜像部署（2026-10-21，进行中）
+
+- 操作者要求由助手直接完成可执行的项目工作，仅在缺少账号权限、凭证或业务决定时询问。目标仓库为 `https://github.com/qinyinxiaoyun/stockWatcher`；SSH 只读查询远端成功，初次查询为空仓库，已设置 `origin`。
+- 新增 `.github/workflows/build-deploy.yml`、`compose.registry.yaml`、`scripts/deploy-image.sh`、`tests/test_image_deploy.py` 和 `docs/GITHUB_DEPLOY.md`。路线改为 GitHub Actions + GHCR，替代原阶段4服务器 bare Git 构建计划。
+- PR仅离线测试；main推送先测试、构建amd64/arm64镜像、用无网络容器初始化验收，随后才按开关部署。官方构建Actions已通过GitHub SSH只读查询固定到具体提交。部署使用镜像digest、生产串行锁，并拒绝被main新提交替代的过期构建覆盖生产。
+- 复用首次部署的project、共享.env、data、UID/GID和Nginx。部署校验镜像revision、先备份再迁移，待消费队列默认阻断worker启动；app SHA和worker本轮新心跳分别检查。schema变化时不自动恢复旧数据库或旧应用。
+- 新增19个离线部署场景，验证输入拒绝、真实队列阻断、可读备份、幂等重跑、镜像/就绪SHA错误、旧心跳拒绝及schema变化禁回退。测试通过本机Git Bash和Docker替身执行，不访问服务器或外部业务接口。
+
+### 本轮实际验证与命令
+
+| 实际执行 | 结果 |
+| --- | --- |
+| `.venv\Scripts\python.exe -m pytest -q` | **170 passed in 42.18s**，包含151项原有测试与19项部署测试，完全离线 |
+| Git Bash `bash -n scripts/deploy-image.sh` | 通过 |
+| `tmp/actionlint/actionlint.exe -shellcheck= .github/workflows/build-deploy.yml` | 官方actionlint v1.7.12校验通过；临时工具位于已忽略tmp并核对发行校验和 |
+| `docker compose --env-file tmp/compose-validation.env -f compose.registry.yaml config --format json`（通过子进程提供无凭证插值变量） | 实际解析通过；app/worker同镜像、无build、app仅127.0.0.1；不依赖本机Docker daemon |
+| `git diff --check`；已跟踪源码及原始ZIP常见私钥/API-key标记和敏感归档路径扫描 | 通过；未输出敏感内容；原ZIP保留 |
+| 公网 `GET https://stock.janettepa.uk/ready` | code0/status=ready，仍为首次部署SHA aa24ee28ab3b69fd133c3b0cca3f3176012ad6f2；本聊天未重写首次部署 |
+
+### 尚待真实验证
+
+- GitHub实际构建、容器SQLite版本、镜像首次切换与故障回退演练，以实际工作流与服务器结果为准，不能以离线测试替代。
+- SSH推送权限已可用；管理仓库Secrets/Variables需要GitHub API授权。首次官方CLI设备登录因网络超时未保存，正在使用官方设备授权协议重试；凭证仅保存本地已忽略.env，不进入代码、日志或聊天。
+- `DEPLOY_ENABLED` 尚未开启；首次监控保持false，真实微信/模型/新闻联调与旧系统迁移切换沿阶段3单独验收。
