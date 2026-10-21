@@ -27,6 +27,10 @@ data/
 *.db-*
 *.sqlite
 *.sqlite3
+*.sqlite-*
+*.sqlite3-*
+*.dump
+*.sql
 *.log
 logs/
 backups/
@@ -49,3 +53,6 @@ temp/
 *.tmp
 release-*.tar.gz
 release-*.zip
+.envrc
+*.der
+*.pkcs8

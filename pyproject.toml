@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stock-watch"
+version = "0.1.0"
+description = "Self-hosted stock-news monitor with WeCom configuration"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+  "cryptography==50.0.2",
+  "tzdata>=2026.1,<2027",
+]
+
+[project.optional-dependencies]
+server = ["gunicorn==26.2.0"]
+dev = ["pytest>=8.4,<10"]
+
+[project.scripts]
+stock-watch = "stock_watch.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["stock_watch*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]
+filterwarnings = ["error"]
