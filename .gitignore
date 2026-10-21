@@ -1,0 +1,51 @@
+# Local secrets and credentials
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# Python environments and caches
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Persistent runtime data
+data/
+*.db
+*.db-*
+*.sqlite
+*.sqlite3
+*.log
+logs/
+backups/
+*.bak
+*.backup
+
+# Build, packaging, and local tooling
+build/
+dist/
+*.egg-info/
+.docker-data/
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Temporary and generated release artifacts
+tmp/
+temp/
+*.tmp
+release-*.tar.gz
+release-*.zip

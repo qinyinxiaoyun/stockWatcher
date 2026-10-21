@@ -1,0 +1,8 @@
+.env
+.venv
+__pycache__
+*.pyc
+verification
+test_*.py
+README*
+scf_*.py
