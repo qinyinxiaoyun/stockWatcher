@@ -196,3 +196,21 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - `tmp/wecom-config.py` 校验通过，并新增后台字符范围检查；`tmp/probe-wecom-config.py --callback-only` 的公网新Key加密GET回显和错误签名403均通过；只读运行验收仍schema2/config_version1、数据库完整性ok、outbox0/tasks0、worker心跳正常、监控false。
 - 实际执行完整离线回归 `.venv\Scripts\python.exe -m pytest -q`：**256 passed in 43.24s**。未发送微信消息、未调用模型推理，旧云函数未修改。
 - 当前需管理员重新读取本机私密文件的新AES值，先保存API接收回调（URL、Token不变），成功后再添加可信IP66.135.8.221。服务端合成验证已通过，企业微信后台保存与真实收发仍待用户反馈验收。
+
+## 企业微信真实双向收发验收（2026-10-22）
+
+- 操作者确认API接收回调及可信IP已保存。实际执行 `tmp/probe-wecom-config.py`：加密回调精确回显、错误签名403；企业微信token鉴权及应用信息接口通过（code0），应用匹配且指定收件人在可见范围内。DeepSeek仍只请求模型列表，鉴权通过且deepseek-flash可用。
+- 操作者在“股票新闻助手”企业微信应用会话发送“帮助”，并确认客户端收到回复。实际执行 `tmp/verify-wecom-roundtrip.py`，只查询状态、计数及内部收件人一致性，不读取/输出完整消息、成员ID或凭证。
+- 正式库inbox done1、回复outbox sent1，完成的接收/投递配对1条且收件人仅为消息发起人；pending outbox0、模型意图任务0、monitor_runs0。schema2、config_version1、integrity_check=ok，worker心跳与实际发布1561161…一致，MONITOR_ENABLED=false。
+- 本轮完整离线验证 `.venv\Scripts\python.exe -m pytest -q`：**256 passed in 42.08s**。
+- 已实际执行 `tmp/prepare-single-news.py`：从生产worker按现有首个启用目标兆易创新、单条查询、page_size1、max_attempts1抓取并保留1篇公开新闻，未调用模型/投递/写正式库。输入为证券时报网《两融余额九连降 累计缩水950.28亿元》，发布时间2026-10-22 10:14（Asia/Shanghai），URL为 <http://finance.eastmoney.com/a/202610223903781079.html>；上游返回的是新闻摘要，尚未读取全文。
+- 操作者明确批准以该篇进行最多1次DeepSeek分析及向既有唯一测试成员发送1条“联调测试”结果；自动监控保持关闭，旧云函数继续运行。实际执行结果在后续条目记录，不能仅凭授权将真实模型/业务投递标为通过。
+
+## 授权单篇真实业务接口验收（2026-10-22）
+
+- 实际执行 `.venv\Scripts\python.exe tmp/run-single-news-acceptance.py`。直接复用已部署版本的Eastmoney样本、DeepSeekAnalyzer与WeComClient.send_chunk，不运行MonitorService/CLI monitor，不触发调度或初始化正式数据库。
+- 固定同一已审阅新闻和目标；DeepSeek模型deepseek-flash、max_tokens1200、max_attempts1，传输计数硬限1次。输入为上游新闻摘要，未假称读取全文；输出通过项目结构及目标约束校验，分类“普通／不确定”。本条测试消息用于展示接口结果，不代表这类普通新闻符合正式预警阈值。
+- 唯一收件人与此前“帮助”成功回执的发起人内部一致；发送请求硬限1次，遇token失效、超时或结果不确定也不补发。企业微信返回code0/accepted_chunks1，消息911 UTF-8字节，含“联调测试”和监控关闭提示；未记录或输出成员ID、完整消息、msgid、Token或上游原始响应。客户端是否收到这条测试消息尚未另行确认，之前“帮助”回执已由用户确认收到。
+- 实际结果model_requests1、send_requests1、messages_accepted1，run phase=completed。持久化防重账本位于 `/srv/stock-watch/shared/data/acceptance/news-cf0d3073f4911460a078dda4.json`，目录0700、文件0600；该样本同一run_id再次执行会拒绝调用，不允许删除账本后重试。本次单次推理/投递授权已使用，后续真实任务按新授权范围执行。
+- 本脚本SQLite连接全部mode=ro；执行前后关键表计数与版本一致：seen_articles0、outbox1（此前帮助回执）、monitor_runs0、async_tasks0、config_version1，PRAGMA及app_meta schema均2，integrity_check=ok。该比较是计数及版本检查，不是逐行内容一致性证明；worker常规心跳继续写入monitor_state。
+- MONITOR_ENABLED=false，实际发布仍1561161…，旧云函数未修改。已完成真实接口小范围联调；自动调度、首次基线/正式筛选与持久投递、真实配置修改及自然语言管理、生产故障回退/整机重启/长期负载/异地备份、旧系统切换仍未验收或启用。
