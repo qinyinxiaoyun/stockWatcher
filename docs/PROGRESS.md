@@ -175,3 +175,15 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 已核对保留旧代码使用COS seen与ServerChan，新服务使用独立SQLite与企业微信；同时启用相同目标可能产生重复分析/通知，但不会互相覆盖去重状态。新监控继续关闭，未修改旧函数。
 - 已创建本机 `.env.production.local`：只允许当前用户读取、git check-ignore确认排除；回调Token/AES Key自动生成且未显示内容。企业微信应用资料、成员UserID和已有模型密钥由操作者填入空项，尚未上传服务器或调用真实接口。
 - 已更新 `docs/WECOM_SETUP.md` 的创建应用、字段来源和并行/接管边界；本轮仅文档和忽略配置模板变化，无业务代码修改，不重复运行离线测试。
+
+## 企业微信资料同步与无投递预检（2026-10-22）
+
+- 操作者确认私密资料已填写。`tmp/wecom-config.py` 使用项目Settings/WeComCrypto实际校验必填项、正数AgentId、43字符AESKey、UserID及监控关闭；结果通过，管理员1名、收件人1名，未显示任何值。
+- `tmp/apply-wecom-config.py` 通过既有严格SSH在共享deploy.lock下执行：确认无待消费任务→停止app/worker→备份SQLite及0600私密环境文件→仅白名单合并凭证→原子替换0600环境文件→重建同版本app/worker→用容器内摘要逐项核对实际配置值。保留原PUSH_TOKEN、数据库路径、镜像版本及其他环境配置。
+- 已生成数据库备份 `pre-wecom-20261022T024416649543Z.db`，完整性检查通过；环境备份保留在服务器root私密共享目录，不展示内容。正式库仍schema2/config_version1，待消费outbox/tasks均0；未恢复覆盖数据库。
+- 已实际执行 `tmp/probe-wecom-config.py`：公网加密回调GET精确回显随机挑战，错误签名返回403，不创建管理任务；这只是服务端协议验证，不等同于企业微信后台已保存回调。
+- 企业微信gettoken鉴权成功，应用信息只读接口返回60020。`tmp/wecom-trust-ip.py` 从错误信息仅提取并确认来源IP `66.135.8.221`，需要管理员后台加入“企业可信IP”。不打印原始上游响应、access_token或带凭证URL。
+- DeepSeek仅调用官方 `GET /models`：鉴权成功，配置模型deepseek-flash在可用列表中；没有发起模型推理或消耗推理额度。未发送微信消息，未发起实际新闻分析。
+- `tmp/verify-live-deployment.py 1561161b3153d3c720c1947781fe66b12290968a` 只读验收通过：公网服务ready、worker心跳版本一致、MONITOR_ENABLED=false、schema2/config_version1、outbox0/tasks0、数据库完整性ok。文档提交未触发部署，故按实际发布SHA校验。
+- 当前需操作者在企业微信管理员后台放行上述IP并保存 `https://stock.janettepa.uk/wecom/callback`，Token/EncodingAESKey使用私密文件既有值。若后台要求域名校验，交由助手处理服务器验证文件。真实指定成员投递、双向指令、付费模型推理和新闻联调仍未验收；旧云函数保持运行，新监控保持关闭。
+- 本轮未修改业务代码或测试，仅修改私密运行配置及文档；未重复运行已通过256项的离线测试。
