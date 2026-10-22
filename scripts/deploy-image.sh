@@ -35,6 +35,7 @@ install -d -m 0750 -o 10001 -g 10001 "$data" "$data/backups"
 # Treat release metadata as data, not executable shell input.
 previous_image=
 previous_sha=
+previous_marker=
 if [[ -e "$state" || -L "$state" ]]; then
     [[ -f "$state" && ! -L "$state" ]] || die 'Unsafe image release metadata'
     while IFS= read -r line || [[ -n "$line" ]]; do
@@ -46,6 +47,10 @@ if [[ -e "$state" || -L "$state" ]]; then
     done < "$state"
     valid_image "$previous_image" && valid_sha "$previous_sha" || die 'Invalid previous image metadata'
 fi
+if [[ -L "$marker" ]]; then
+    previous_marker=$(readlink -- "$marker")
+    [[ -n "$previous_sha" && "$previous_marker" == "$base/image-releases/$previous_sha" ]] || die 'Inconsistent previous release marker'
+fi
 
 export STOCK_WATCH_IMAGE="$image" BUILD_SHA="$sha"
 export STOCK_WATCH_ENV_FILE="$envfile" STOCK_WATCH_DATA_DIR="$data"
@@ -56,6 +61,8 @@ complete=false
 pre_schema=
 state_tmp=
 link_tmp=
+records_started=false
+previous_worker_running=false
 
 queue_check() {
     # MONITOR_ENABLED=false only stops scheduling; existing tasks still call real APIs.
@@ -80,7 +87,13 @@ PY
 }
 
 schema_check() {
-    "${compose[@]}" run --rm --no-deps -T app python -c 'import sqlite3; db=sqlite3.connect("file:/data/stock-watch.db?mode=ro",uri=True); print(db.execute("PRAGMA user_version").fetchone()[0]); db.close()'
+    "${compose[@]}" run --rm --no-deps -T app python - <<'PY'
+import hashlib, json, sqlite3
+with sqlite3.connect("file:/data/stock-watch.db?mode=ro", uri=True) as db:
+    version = db.execute("PRAGMA user_version").fetchone()[0]
+    rows = db.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name,tbl_name").fetchall()
+print(str(version) + ":" + hashlib.sha256(json.dumps(rows, separators=(",", ":")).encode()).hexdigest())
+PY
 }
 
 worker_check() {
@@ -97,8 +110,52 @@ if observed < started:
 PY
 }
 
+capture_previous_runtime() {
+    local cid facts service running health observed_image since
+    if [[ -z "$previous_sha" ]]; then
+        cid=$("${compose[@]}" ps --all --quiet app worker) || die 'Could not inspect existing services'
+        [[ -z "$cid" ]] || die 'Existing services have no trusted previous release metadata'
+        return
+    fi
+    local previous_release=$base/image-releases/$previous_sha
+    [[ -d "$previous_release" && ! -L "$previous_release" && -f "$previous_release/compose.registry.yaml" && ! -L "$previous_release/compose.registry.yaml" ]] || die 'Missing or unsafe previous Compose release'
+    [[ -s "$data/stock-watch.db" ]] || die 'Existing release database is missing or empty'
+    for service in app worker; do
+        cid=$("${compose[@]}" ps --all --quiet "$service") || die 'Could not inspect previous service'
+        [[ "$cid" =~ ^[0-9a-f]{12,64}$ ]] || die 'Previous service is absent or ambiguous; no service was stopped'
+        facts=$(docker inspect --format '{{.State.Running}}|{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}|{{.Config.Image}}' "$cid") || die 'Could not inspect previous container identity'
+        IFS='|' read -r running health observed_image <<< "$facts"
+        [[ "$running" == true && "$health" == healthy && "$observed_image" == "$previous_image" ]] || die 'Previous service is stopped, unhealthy, or has an unexpected image; no service was stopped'
+    done
+    ready_check "$previous_sha" >/dev/null 2>&1 || die 'Previous app version is not ready; no service was stopped'
+    since=$(date -u -d '3 minutes ago' +%Y-%m-%dT%H:%M:%S%z)
+    worker_check "$previous_sha" "$since" >/dev/null 2>&1 || die 'Previous worker version or heartbeat is invalid; no service was stopped'
+    previous_worker_running=true
+}
+
+restore_release_records() {
+    [[ "$records_started" == true ]] || return 0
+    if [[ -n "$previous_sha" ]]; then
+        state_tmp=$(mktemp "$shared/.image-restore.XXXXXX") || return 1
+        printf 'STOCK_WATCH_IMAGE=%s\nBUILD_SHA=%s\n' "$previous_image" "$previous_sha" > "$state_tmp" || return 1
+        mv -f -- "$state_tmp" "$state" || return 1
+        state_tmp=
+    else
+        rm -f -- "$state" || return 1
+    fi
+    if [[ -n "$previous_marker" ]]; then
+        link_tmp=$base/.restore-image-$$
+        ln -s -- "$previous_marker" "$link_tmp" || return 1
+        mv -Tf -- "$link_tmp" "$marker" || return 1
+        link_tmp=
+    else
+        rm -f -- "$marker" || return 1
+    fi
+    records_started=false
+}
+
 recover_previous() {
-    [[ -n "$previous_image" && "$pre_schema" =~ ^[0-9]+$ ]] || return 1
+    [[ "$previous_worker_running" == true && -n "$previous_image" && "$pre_schema" =~ ^[0-9]+:[0-9a-f]{64}$ ]] || return 1
     local current_schema previous_release=$base/image-releases/$previous_sha
     [[ -f "$previous_release/compose.registry.yaml" && ! -L "$previous_release/compose.registry.yaml" ]] || return 1
     current_schema=$(schema_check 2>/dev/null) || return 1
@@ -107,10 +164,9 @@ recover_previous() {
     compose=(docker compose -p stock-watch --env-file "$envfile" -f "$previous_release/compose.registry.yaml")
     "${compose[@]}" up -d --no-build --wait --wait-timeout 120 app >/dev/null 2>&1 || return 1
     ready_check "$previous_sha" >/dev/null 2>&1 || return 1
-    if ! queue_check >/dev/null 2>&1; then
-        printf '%s\n' 'Previous app restored; worker remains stopped pending explicit queue approval' >&2
-        return 0
-    fi
+    # Resume the exact worker proven active before this attempt. A queue that
+    # arrived during shutdown belongs to the previous service's normal work;
+    # this does not approve its consumption by the candidate release.
     local started
     started=$(date -u +%Y-%m-%dT%H:%M:%S.%NZ) || return 1
     if ! "${compose[@]}" up -d --no-build --wait --wait-timeout 120 worker >/dev/null 2>&1; then
@@ -131,10 +187,13 @@ recover_previous() {
 finish() {
     local status=$?
     trap - EXIT
-    [[ -z "$state_tmp" ]] || rm -f -- "$state_tmp"
-    [[ -z "$link_tmp" ]] || rm -f -- "$link_tmp"
+    [[ -z "$state_tmp" ]] || rm -f -- "$state_tmp" || true
+    [[ -z "$link_tmp" ]] || rm -f -- "$link_tmp" || true
     if [[ "$complete" != true ]]; then
         printf 'Image deployment failed during %s; no success was recorded.\n' "$stage" >&2
+        if ! restore_release_records; then
+            printf '%s\n' 'Could not restore release metadata; inspect image-release.env and current-image' >&2
+        fi
         if [[ "$stopped" == true ]]; then
             "${compose[@]}" stop worker app >/dev/null 2>&1 || true
             if ! recover_previous; then
@@ -144,6 +203,8 @@ finish() {
         fi
         [[ "$status" != 0 ]] || status=1
     fi
+    [[ -z "$state_tmp" ]] || rm -f -- "$state_tmp" || true
+    [[ -z "$link_tmp" ]] || rm -f -- "$link_tmp" || true
     exit "$status"
 }
 trap finish EXIT
@@ -166,25 +227,37 @@ if value not in {"true", "false"} or (sys.argv[1] == "first" and value != "false
     raise SystemExit(1)
 PY
 
+stage=previous-runtime
+capture_previous_runtime
+if [[ -s "$data/stock-watch.db" ]]; then
+    pre_schema=$(schema_check) || die 'Could not read the existing database structure before shutdown'
+    [[ "$pre_schema" =~ ^[0-9]+:[0-9a-f]{64}$ ]] || die 'Invalid existing database structure signature'
+    stage=queue-preflight
+    queue_check >/dev/null 2>&1 || die 'Pending real work requires explicit WORKER_QUEUE_APPROVED=true; existing services were left running'
+fi
+
 stage=stop-services
 stopped=true
 "${compose[@]}" stop worker app >/dev/null 2>&1
 stage=backup
 if [[ -s "$data/stock-watch.db" ]]; then
-    pre_schema=$("${compose[@]}" run --rm --no-deps -T app python - <<'PY'
-import datetime, pathlib, sqlite3
+    backup_schema=$("${compose[@]}" run --rm --no-deps -T app python - <<'PY'
+import datetime, hashlib, json, pathlib, sqlite3
 with sqlite3.connect("file:/data/stock-watch.db?mode=ro", uri=True) as source:
     schema = source.execute("PRAGMA user_version").fetchone()[0]
+    structure = source.execute("SELECT type,name,tbl_name,sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type,name,tbl_name").fetchall()
     stamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     path = pathlib.Path("/data/backups") / ("pre-image-" + stamp + ".db")
     with path.open("xb"):
         pass
     with sqlite3.connect(path) as target:
         source.backup(target)
-print(schema)
+        if target.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+            raise RuntimeError("backup integrity check failed")
+print(str(schema) + ":" + hashlib.sha256(json.dumps(structure, separators=(",", ":")).encode()).hexdigest())
 PY
     )
-    [[ "$pre_schema" =~ ^[0-9]+$ ]] || die 'Could not verify pre-migration schema'
+    [[ "$backup_schema" == "$pre_schema" ]] || die 'Database structure changed before migration; inspect before retrying'
 fi
 stage=database-initialization
 "${compose[@]}" run --rm --no-deps -T app python -m stock_watch init-db >/dev/null 2>&1
@@ -214,9 +287,10 @@ state_tmp=$(mktemp "$shared/.image-release.XXXXXX")
 printf 'STOCK_WATCH_IMAGE=%s\nBUILD_SHA=%s\n' "$image" "$sha" > "$state_tmp"
 link_tmp=$base/.current-image-$$
 ln -s -- "$release" "$link_tmp"
-mv -Tf -- "$link_tmp" "$marker"
-link_tmp=
+records_started=true
 mv -f -- "$state_tmp" "$state"
 state_tmp=
+mv -Tf -- "$link_tmp" "$marker"
+link_tmp=
 complete=true
 printf '%s\n' 'Image deployment ready; environment and existing Nginx configuration were preserved'

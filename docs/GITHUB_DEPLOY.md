@@ -32,15 +32,25 @@ GHCR 登录使用工作流短期 `GITHUB_TOKEN`，不要求另存长期 PAT。�
 
 服务器受控入口 `deploy/github-gate.py` 与固定的 Compose/部署脚本由助手通过已有可信管理连接安装到 `/srv/stock-watch/deploy-tools/`，必须为root所有且组/其他用户不可写。GitHub密钥无法更改这些部署工具，也不能运行SSH shell、SCP、SFTP或端口转发；工具更新须经管理连接重新审核安装。镜像中的业务代码仍以UID10001运行。
 
-首次部署保持 `MONITOR_ENABLED=false`。该开关不会禁止 worker 消费已有管理任务和 outbox；脚本会检查待消费队列，非空时停止。GitHub受限入口不能提供队列豁免；确需消费已有队列时，须经可信管理连接单独审核，才能在该次手动执行提供 `WORKER_QUEUE_APPROVED=true`。
+首次部署保持 `MONITOR_ENABLED=false`。该开关不会禁止 worker 消费已有管理任务和 outbox。脚本在停止服务之前检查队列；默认发现待处理任务便拒绝本次发布，旧服务继续运行，待队列正常处理后可重试失败的部署任务。GitHub受限入口不能提供队列豁免；确需让新版本消费已有队列时，仍须经可信管理连接单独审核该次手动执行的 `WORKER_QUEUE_APPROVED=true`。
+
+已有受信镜像发布记录时，停前还须确认旧 app/worker 都在运行、健康、镜像及版本一致，且数据库存在；原本停止/不健康的服务不会被发布脚本擅自启动。没有发布记录却存在该项目容器时拒绝自动接管，交由可信管理连接处理。首次没有容器、没有数据库的空部署仍可初始化。
 
 ## 部署入口及持久目录
 
 镜像配置为 `compose.registry.yaml`，无服务器 build。`scripts/deploy-image.sh` 接收镜像 digest 和完整代码 SHA，发布文件放在 `/srv/stock-watch/image-releases/<sha>/`。共用项目名 `stock-watch`、锁 `/srv/stock-watch/shared/deploy.lock`、环境文件 `/srv/stock-watch/shared/.env`、数据目录 `/srv/stock-watch/shared/data/` 以及 UID/GID 10001。
 
-脚本校验输入和镜像 revision，拉取镜像后才停止旧 app/worker，先备份 SQLite 再执行初始化/迁移，然后验证 app 版本与 worker 的本轮心跳。只有验收通过才记录镜像部署成功。镜像发布记录独立于源码首部署的 `current` 指针，不覆盖首部署配置或 Nginx。
+脚本校验输入和镜像 revision，核对旧服务身份及队列后才停止旧 app/worker，先备份 SQLite 再执行初始化/迁移，然后验证 app 版本与 worker 的本轮心跳。停前会保存数据库 `user_version` 和 SQLite 表/索引/视图/触发器定义的稳定结构指纹；备份检查完整性，迁移前再次比对结构。只有验收通过才记录镜像部署成功。镜像发布记录独立于源码首部署的 `current` 指针，不覆盖首部署配置或 Nginx。
 
-失败时不自动恢复数据库。只有数据库 schema 未改变且旧镜像记录可用时才允许尝试恢复旧应用；首次从源码部署切换、schema 变化或无法证实兼容时需要单独处理。数据库恢复会影响已投递状态和配置，必须另行审核，不能把应用版本回退等同于数据恢复。
+失败时不自动恢复数据库。只有数据库版本及结构指纹都未改变、旧镜像记录可用、且停前旧服务已验证在运行时，才允许恢复旧 app/worker。停止期间新进入的队列交回该旧版本处理，不因它非空而把原先正常运行的 worker 留在停止状态；这不等于批准候选版本消费队列。备份、就绪检查、心跳或发布记录写入失败同样走该恢复路径，发布元数据及 `current-image` 恢复到尝试前状态。
+
+schema 变化（包括已提交 DDL 但版本号尚未更新）或无法证实兼容时，不盲目回退旧应用；正式数据不从备份自动覆盖。数据库恢复会影响已投递状态和配置，必须另行审核，不能把应用版本回退等同于数据恢复。具体真实/隔离演练结果见进度文档，不把离线测试写成生产故障演练。
+
+### 独立恢复演练工具
+
+`scripts/verify-deploy-recovery.py` 在 Linux 管理连接下以 root 运行，需要本机已有两份不同版本的不可变 GHCR 镜像及对应完整 SHA。入口为 `python3 scripts/verify-deploy-recovery.py --old-image <digest引用> --old-sha <完整SHA> --new-image <digest引用> --new-sha <完整SHA>`；若部署脚本不在同目录，用 `--deploy-script` 指定已审核文件。
+
+工具只替换待测脚本的固定根目录和 Compose 项目名，其余分支保持原样；使用随机 `stock-watch-recovery-*` 项目、临时数据库和无生产凭证的环境。容器禁网、不开端口，app/worker 命令替换为本地就绪/心跳 fixture，初始化仍使用真实镜像代码。覆盖停前队列拒绝、候选就绪失败回退、停止时新入队、原 worker 已停止、成功发布保留数据共五项。结束清理自身测试容器和临时业务文件，仅保留非敏感 `summary.json`；不构建镜像、不覆盖正式库、不向生产服务注入故障。部署脚本会拉取给定镜像，因此 Docker/GHCR 控制面并非完全离线；业务 fixture 没有网络访问。
 
 ## 当前验收边界
 

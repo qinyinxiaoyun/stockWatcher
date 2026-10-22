@@ -214,3 +214,20 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 实际结果model_requests1、send_requests1、messages_accepted1，run phase=completed。持久化防重账本位于 `/srv/stock-watch/shared/data/acceptance/news-cf0d3073f4911460a078dda4.json`，目录0700、文件0600；该样本同一run_id再次执行会拒绝调用，不允许删除账本后重试。本次单次推理/投递授权已使用，后续真实任务按新授权范围执行。
 - 本脚本SQLite连接全部mode=ro；执行前后关键表计数与版本一致：seen_articles0、outbox1（此前帮助回执）、monitor_runs0、async_tasks0、config_version1，PRAGMA及app_meta schema均2，integrity_check=ok。该比较是计数及版本检查，不是逐行内容一致性证明；worker常规心跳继续写入monitor_state。
 - MONITOR_ENABLED=false，实际发布仍1561161…，旧云函数未修改。已完成真实接口小范围联调；自动调度、首次基线/正式筛选与持久投递、真实配置修改及自然语言管理、生产故障回退/整机重启/长期负载/异地备份、旧系统切换仍未验收或启用。
+
+## 发布恢复修复与上线决定（2026-10-22，进行中）
+
+- 操作者授权处理发布恢复问题；关注名单及现有配置保持到上线，不导入旧系统seen，计划非交易时段切换，系统升级暂缓。自动监控保持关闭，旧系统本轮不改动。
+- 修复目标：队列非空在停服务前拒绝发布；停前验证旧app/worker身份、健康、版本及数据库；停后队列竞态或候选失败时，在结构兼容前提下恢复原先运行的旧worker。GitHub入口仍不能提交队列审批豁免。
+- 补充恢复边界：数据库不仅比较user_version，还比较稳定DDL指纹；备份失败也有停前结构证据；发布记录写入失败恢复旧state/marker；原本停止、不健康或无法确认身份的服务不自动接管。
+- 当前正在补充离线回归和无业务网络、独立Compose/临时数据库的Docker隔离演练；验证和真实发布结果将在完成后记录，未提前标为完成。
+
+### 修复验证完成，准备发布
+
+- `scripts/deploy-image.sh` 已实现上述保护，并确保EXIT trap临时文件清理失败不会中断旧服务恢复；发布成功前不会记录成功，失败不覆盖正式数据库。
+- 实际执行 `.venv\Scripts\python.exe -m pytest tests/test_image_deploy.py -q` 首轮35 passed；随后补齐候选app启动时入队、旧app版本/worker心跳不符、清理失败与原软链接恢复边界。最终完整 `.venv\Scripts\python.exe -m pytest -q`：**277 passed, 1 skipped in 133.04s**。跳过仅为Windows不能可靠创建真实Linux软链接的用例，交由Linux CI验证；其余测试全离线。
+- 实际执行Git Bash `bash -n scripts/deploy-image.sh`、Python `-m py_compile scripts/verify-deploy-recovery.py`、`git diff --check` 均通过；并行只读复审确认没有扩大GitHub gate权限、队列审批豁免或正式数据恢复权限。
+- 在服务器实际执行 `tmp/release-recovery-ops.py upload-probe` / `run-probe /srv/stock-watch/recovery-checks/tool-pf0jj6md`（经原有严格管理SSH）。工具使用真实旧镜像9c49a76…和新镜像1561161…，`network_mode:none`、不开端口、独立环境和临时库，覆盖五项真实Docker案例：停前pending拒绝且原容器ID不变；候选ready版本错误后旧app/worker恢复；SIGTERM期间入队后旧worker恢复且pending保留；原worker停止时拒绝且不启动它；空队列成功更新并保留配置/seen/已投递outbox。**五项全部通过**。
+- 本次隔离项目为 `stock-watch-recovery-jenv2_sd`；已清理自身容器和临时业务文件（均为可丢弃fixture），保留摘要 `/srv/stock-watch/recovery-checks/run-jenv2_sd/summary.json`。待测部署脚本SHA256为 `5b5249a6abb1ec490c3935053eb6de6be2f65b94c8a8d6c4f56fcb2b8a1596a4`。未向生产注入故障、没有运行真实监控/模型/投递；给定镜像的Docker/GHCR拉取属于部署控制面，不将其宣称为完全离线。
+- 演练前只读生产核对：app/worker仍为1561161…且healthy、MONITOR_ENABLED=false、config_version1、三只股票不变、themes0、seen0、baseline0、monitor_runs0、async_tasks0、outbox sent1且待消费0、integrity_check=ok；业务表指纹为 `e15149082b0f3b1e6187ace2ab73549033bf4360213dac091729039a1a6eeb29`。接下来通过可信管理连接在deploy.lock下备份并原子更新固定部署脚本，再提交普通代码发布；实际结果另记，不将“已验证”混同“已部署”。
+- 演练后再次只读核对生产容器ID、版本、数据计数及业务表指纹完全未变。已实际执行 `tmp/release-recovery-ops.py install-tools`：在deploy.lock下校验原脚本SHA256为 `b672ea31e9323ea8f022d5b4d806fc950a1fe4f8a63758f7023df2951c7318b9`，原件备份到 `/srv/stock-watch/deploy-tools/deploy-image.pre-recovery-20261022T060828486042Z.sh`，经语法检查后原子替换为上述已演练的5b5249a6…版本（root0640）。没有改动gate、密钥、权限范围或生产环境文件；此时业务容器仍是原版本，等待普通推送触发部署。
