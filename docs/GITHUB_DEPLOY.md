@@ -60,6 +60,8 @@ schema 变化（包括已提交 DDL 但版本号尚未更新）或无法证实�
 
 后续明确启用授权：操作者确认旧触发器停用且无执行中任务，要求现在开启新监控；已于2026-10-22北京时间14:39仅将共享环境MONITOR_ENABLED改为true，并在同一f104a7b…镜像重建app/worker。自然首轮及下一时槽成功、3个目标基线完成，名单/config_version不变。此为运行配置切换，不是新代码发布；后续部署须保留该已授权开关，不恢复为首次部署默认值。详见进度文档。
 
-本地离线测试、Compose 解析、GitHub 实际构建、首次镜像部署和回退演练分别记录在 `docs/PROGRESS.md`。文件已编写不代表服务器已部署。首次服务器部署与真实企业微信/DeepSeek/新闻源联调仍分别验收，自动监控须由操作者明确启用。
+同日独立订阅版本0c988dae7cbf1cd1e6ddedae44a0ad6e4dd79d1b已通过[发布工作流39772647559](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39772647559)：Linux测试369通过，双架构镜像构建及受限部署均成功。当前镜像为`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:dd27d25c2846b8bb8223be54d271a7ee7df906fdbc8ef04ea523b6225b9df067`，schema3。标准发布后在deploy.lock下停app/worker、复核空队列并另做备份，在禁网容器内同事务准入唯一原拥有者并迁移其配置/已处理记录/基线，再直接重启同一镜像。实际UserID `MaTianYe`与操作者指定的MaTianye核对一致；原配置版本、3只股票、68条已处理记录、3个基线及环境文件保持不变，MONITOR_ENABLED仍true。两服务、发布指针、版本心跳、公网health/ready和两份数据库备份完整性已核对；新模式自然预警及新增成员真实收件尚未验收。schema3不可直接回退schema2旧镜像。
+
+本地离线测试、Compose解析、GitHub实际构建、首次镜像部署和回退演练分别记录在 `docs/PROGRESS.md`。首次服务器部署与真实企业微信/DeepSeek/新闻源联调的验收结果分别记录，后续新增能力继续单独验收；自动监控须由操作者明确启用。
 
 官方依据：[GitHub 镜像构建与发布](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)、[GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。
