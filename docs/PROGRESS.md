@@ -151,3 +151,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - Windows首次验证因本地私钥继承了额外ACL被SSH拒绝；已只收紧本项目两个忽略凭证文件的ACL到当前用户，再次验证通过。没有为此放宽SSH权限。
 
 接下来开启仓库部署开关并推送本提交，实际镜像切换及验收结果继续记录；自动监控开关仍保持false。
+
+### 自动部署实际验收完成（2026-10-22）
+
+- 已开启仓库 `DEPLOY_ENABLED=true` 并推送 `9c49a76f5462ec5d433e0f310ef3b113b8e35298`。工作流 <https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39703307482> 的测试、镜像和部署最终全部成功。
+- 首次deploy在SSH认证时报告 `error in libcrypto`：Windows文本模式向CLI传递Secret时引入CRLF。该次未进入gate，原服务未被停止。已用原始LF字节重设同一受限密钥与主机公钥，仅重试失败部署；本次工作流修订另增加CR清理以避免再发。
+- 首次成功镜像切换为 `ghcr.io/qinyinxiaoyun/stockwatcher@sha256:995d1c4662dfe9186874b38e37636b8143b290839d8b9d21d612da33d8640dae`；app和worker使用同digest、均healthy、UID/GID10001、readonly=true。`current-image`实际指向该完整提交的image-releases目录；源码首部署current和现有Nginx保留。
+- 公网 `/ready` 返回code0/status=ready/build_sha=9c49a76…；容器只读SQL核对worker心跳SHA一致，MONITOR_ENABLED=false、schema2、config_version1、outbox0、async_tasks0，数据库integrity_check=ok。
+- 自动生成备份 `pre-image-20261022T010744322836Z.db`；只读核对integrity_check=ok、schema2/config_version1，与正式库相同。文件名用UTC；没有覆盖恢复正式库。
+- 项目AGENTS新增执行偏好：在已授权范围由助手直接配置、测试、推送、部署并核实，仅在确需操作者时询问；监控/真实投递/权限扩张仍保留原约束。
+- 后续仅凭证换行兼容与文档修订会再经同一流程发布；生产故障回退、整机重启、长期资源峰值、异地备份、真实微信/模型/新闻、旧系统切换仍不标为完成。

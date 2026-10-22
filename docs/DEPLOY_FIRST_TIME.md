@@ -46,4 +46,4 @@ docker compose --env-file "$STOCK_WATCH_ENV_FILE" -f compose.host-nginx.yaml ps
 docker compose --env-file "$STOCK_WATCH_ENV_FILE" -f compose.host-nginx.yaml exec -T worker python -m stock_watch status
 ```
 
-真实企业微信、DeepSeek、新闻接口仍需专用凭证与指定成员联调；自动监控开关只控制新闻调度，worker 仍会消费管理任务和投递队列。首次容器重建与临时目录备份恢复已验证，异地备份、整机重启、实际资源峰值、旧系统停用与最终 seen 导入仍需分别验收。本轮未实施或验证阶段4的服务器 Git 自动发布、队列及回滚演练。
+真实企业微信、DeepSeek、新闻接口仍需专用凭证与指定成员联调；自动监控开关只控制新闻调度，worker 仍会消费管理任务和投递队列。首次容器重建与临时目录备份恢复已验证，异地备份、整机重启、实际资源峰值、旧系统停用与最终 seen 导入仍需分别验收。阶段4改用 [GitHub构建与受限镜像部署](GITHUB_DEPLOY.md)，实际部署和回退演练状态分别记录在进度文档。

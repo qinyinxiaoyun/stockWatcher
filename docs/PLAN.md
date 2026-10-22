@@ -27,8 +27,8 @@
 - 已完成现有服务器的首次手动部署：复用 Nginx，app/worker 容器健康，公网 HTTPS、HTTP 跳转、在线备份、隔离恢复和容器重建持久化验收通过。
 - 自动监控保持关闭；企业微信/DeepSeek 凭证、指定成员双向联调、真实新闻与模型接口、资源峰值、异地备份、整机重启及迁移切换仍待完成。证书续期任务存在，尚未强制续期演练。
 
-## 阶段 4：GitHub 构建与自动部署（进行中）
+## 阶段 4：GitHub 构建与自动部署（主流程已验通）
 
 - 根据操作者最新要求，采用 GitHub Actions + GHCR，替代服务器 bare Git 构建路线。仓库为 `qinyinxiaoyun/stockWatcher`。
-- 已补齐 Python 3.12 离线 CI、双架构镜像构建、镜像 digest 部署、备份/队列保护/版本心跳验证，以及受 schema 限制的旧应用恢复；本地全量170项测试通过。
-- GitHub 实际构建、账号授权后的 Secrets/Variables 配置、镜像切换和故障回退演练分别验收；自动监控保持关闭。详见 `docs/GITHUB_DEPLOY.md` 与 `docs/PROGRESS.md`。
+- 已补齐 Python 3.12 离线 CI、双架构镜像构建、镜像 digest 部署、受限SSH入口、备份/队列保护/版本心跳验证，以及受 schema 限制的旧应用恢复；本地全量256项测试通过，GitHub真实测试和镜像构建已通过。
+- GitHub真实构建、Secrets/Variables配置、受限SSH限制、镜像切换、版本心跳、数据库和备份完整性均已验通；自动监控保持关闭。生产故障回退演练、阶段3真实业务联调及迁移切换仍分别验收。详见 `docs/GITHUB_DEPLOY.md` 与 `docs/PROGRESS.md`。

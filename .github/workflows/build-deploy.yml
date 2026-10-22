@@ -133,8 +133,8 @@ jobs:
           [[ -n "$DEPLOY_SSH_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]]
           key="$RUNNER_TEMP/stock-watch-deploy-key"
           known="$RUNNER_TEMP/stock-watch-known-hosts"
-          printf '%s\n' "$DEPLOY_SSH_KEY" > "$key"
-          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > "$known"
+          printf '%s\n' "$DEPLOY_SSH_KEY" | tr -d '\r' > "$key"
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" | tr -d '\r' > "$known"
           unset DEPLOY_SSH_KEY DEPLOY_KNOWN_HOSTS
           ssh_args=(-o BatchMode=yes -o StrictHostKeyChecking=yes
                     -o UserKnownHostsFile="$known" -o IdentitiesOnly=yes
