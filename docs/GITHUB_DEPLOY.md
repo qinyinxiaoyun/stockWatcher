@@ -56,6 +56,8 @@ schema 变化（包括已提交 DDL 但版本号尚未更新）或无法证实�
 
 2026-10-22已实际跑通GitHub测试、双架构镜像构建和受限SSH自动部署；公网版本、app/worker健康、监控关闭、数据库与升级前备份完整性均已核对。Windows上传的SSH凭证统一使用LF，工作流也会清除CR，避免密钥解析失败。具体提交、工作流和未完成项见进度文档。
 
+同日发布恢复修复已随f104a7b…部署：Linux CI278项通过，五项真实Docker隔离故障恢复演练通过；正式版本/心跳/发布指针一致，正式库和升级前备份完整性通过，业务表指纹不变。故障演练未触碰生产项目，自动监控仍关闭；名单、不导入旧seen、非交易时段切换和暂缓系统升级均按操作者决定保留。
+
 本地离线测试、Compose 解析、GitHub 实际构建、首次镜像部署和回退演练分别记录在 `docs/PROGRESS.md`。文件已编写不代表服务器已部署。首次服务器部署与真实企业微信/DeepSeek/新闻源联调仍分别验收，自动监控须由操作者明确启用。
 
 官方依据：[GitHub 镜像构建与发布](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)、[GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。

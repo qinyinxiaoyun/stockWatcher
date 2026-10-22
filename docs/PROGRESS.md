@@ -215,7 +215,7 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 本脚本SQLite连接全部mode=ro；执行前后关键表计数与版本一致：seen_articles0、outbox1（此前帮助回执）、monitor_runs0、async_tasks0、config_version1，PRAGMA及app_meta schema均2，integrity_check=ok。该比较是计数及版本检查，不是逐行内容一致性证明；worker常规心跳继续写入monitor_state。
 - MONITOR_ENABLED=false，实际发布仍1561161…，旧云函数未修改。已完成真实接口小范围联调；自动调度、首次基线/正式筛选与持久投递、真实配置修改及自然语言管理、生产故障回退/整机重启/长期负载/异地备份、旧系统切换仍未验收或启用。
 
-## 发布恢复修复与上线决定（2026-10-22，进行中）
+## 发布恢复修复与上线决定（2026-10-22，已验证并发布）
 
 - 操作者授权处理发布恢复问题；关注名单及现有配置保持到上线，不导入旧系统seen，计划非交易时段切换，系统升级暂缓。自动监控保持关闭，旧系统本轮不改动。
 - 修复目标：队列非空在停服务前拒绝发布；停前验证旧app/worker身份、健康、版本及数据库；停后队列竞态或候选失败时，在结构兼容前提下恢复原先运行的旧worker。GitHub入口仍不能提交队列审批豁免。
@@ -231,3 +231,12 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 本次隔离项目为 `stock-watch-recovery-jenv2_sd`；已清理自身容器和临时业务文件（均为可丢弃fixture），保留摘要 `/srv/stock-watch/recovery-checks/run-jenv2_sd/summary.json`。待测部署脚本SHA256为 `5b5249a6abb1ec490c3935053eb6de6be2f65b94c8a8d6c4f56fcb2b8a1596a4`。未向生产注入故障、没有运行真实监控/模型/投递；给定镜像的Docker/GHCR拉取属于部署控制面，不将其宣称为完全离线。
 - 演练前只读生产核对：app/worker仍为1561161…且healthy、MONITOR_ENABLED=false、config_version1、三只股票不变、themes0、seen0、baseline0、monitor_runs0、async_tasks0、outbox sent1且待消费0、integrity_check=ok；业务表指纹为 `e15149082b0f3b1e6187ace2ab73549033bf4360213dac091729039a1a6eeb29`。接下来通过可信管理连接在deploy.lock下备份并原子更新固定部署脚本，再提交普通代码发布；实际结果另记，不将“已验证”混同“已部署”。
 - 演练后再次只读核对生产容器ID、版本、数据计数及业务表指纹完全未变。已实际执行 `tmp/release-recovery-ops.py install-tools`：在deploy.lock下校验原脚本SHA256为 `b672ea31e9323ea8f022d5b4d806fc950a1fe4f8a63758f7023df2951c7318b9`，原件备份到 `/srv/stock-watch/deploy-tools/deploy-image.pre-recovery-20261022T060828486042Z.sh`，经语法检查后原子替换为上述已演练的5b5249a6…版本（root0640）。没有改动gate、密钥、权限范围或生产环境文件；此时业务容器仍是原版本，等待普通推送触发部署。
+
+### 普通推送、自动部署及最终验收完成
+
+- 已提交并普通推送 `f104a7b7ddcd8025adb8c00020f76fbd1d729f7a`。工作流 <https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39732211177> 的test、image、deploy均success；没有手工执行生产容器切换命令。GitHub Linux CI实际 **278 passed in 45.08s**，包含Windows跳过的真实软链接恢复用例；双架构镜像构建、实际镜像禁网初始化检查均通过，容器SQLite3.46.1。
+- 正式镜像为 `ghcr.io/qinyinxiaoyun/stockwatcher@sha256:23b40bfc8ab96933426ab0f5c8e5d0d8cfb44f3b3e0393f57aec8d500dd53a74`。实际执行 `tmp/release-recovery-ops.py verify-release f104a7b7ddcd8025adb8c00020f76fbd1d729f7a`：两个容器同digest、healthy、10001:10001、readonly=true，镜像revision、公网 `/health` / `/ready`、本轮worker心跳均为f104a7b…；`image-release.env`、`current-image`和运行版本一致，发布目录脚本与受控脚本逐字节一致且为已演练SHA256。
+- 正式库及本次备份 `pre-image-20261022T061243285627Z.db` 的integrity_check均ok、schema2/config_version1。配置、股票/别名/关注主题、审计、seen、outbox逐行选取后计算的业务表指纹均保持上述e1514908…不变；seen0、baseline0、monitor_runs0、async_tasks0、outbox仍仅此前帮助回执sent1，待消费0。worker心跳验收时18.34秒新鲜；没有恢复覆盖数据库。
+- **本轮发布恢复修复已完成并上线到服务代码；正式监控切换未进行。** MONITOR_ENABLED仍false，三只股票和关注配置未变；不导入旧seen，不修改旧云函数，非交易时段切换由操作者安排，系统升级暂不纳入。没有新增真实模型、新闻或消息投递调用。
+- 五项故障注入发生在独立Docker项目，不宣称对生产实例做过故障注入、整机重启或长期压力验收。正式调度/首轮基线/筛选投递、真实配置变更与自然语言管理、异地备份和整机重启仍沿原计划分别验收；它们未被本轮发布恢复修复悄然启用。
+- 本节最终只更新交付记录，以 `[skip ci]` 提交避免记录自身再次部署；实际运行SHA仍为上述f104a7b业务发布，后续普通代码推送继续走同一受限自动发布流程。
