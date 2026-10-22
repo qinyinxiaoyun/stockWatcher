@@ -307,3 +307,16 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 已实际执行`verify 0c988dae7cbf1cd1e6ddedae44a0ad6e4dd79d1b`：app/worker均healthy、UID10001:10001/只读根，worker心跳SHA与新版本一致且新鲜；正式库integrity_check=ok，pending_outbox/pending_tasks均0，outbox仍只有原sent1。公网`https://stock.janettepa.uk/health`及`/ready`均HTTP200、code0、新SHA匹配。备份`pre-image-20261022T114624575303Z.db`（schema2）与`pre-subscriptions-20261022T114959417769Z.db`（schema3）均完整性ok、原配置指纹及seen68一致，位于持久数据目录backups内。
 - 切换完成于北京时间19:50，属于原调度窗口之外，未手动补跑历史监控、调用真实新闻/DeepSeek或额外发送测试消息。新模式自然扫描/重大新闻真实命中投递、新增成员可见范围/收件、实际资源峰值和管理回执时延仍待实际运行验收；本轮健康及迁移检查不能代替这些结果。既有调度仍由唯一worker负责，首次部署默认监控关闭的约定不变。
 - 发布后仅同步README/PLAN/FUTURE_ROADMAP/INDEPENDENT_SUBSCRIPTIONS/WECOM_SETUP/GITHUB_DEPLOY及本记录，执行`git diff --check`；以`[skip ci]`文档提交避免重复构建和重启已验收的同一业务版本。生产运行SHA仍为0c988da…，后续普通代码推送继续走既有完整发布链路。操作辅助文件及私有基线证据保留在忽略的tmp内，不进入提交。
+
+## 个人微信接收与只读双向操作验收（2026-10-22，已完成）
+
+- 操作者要求实现个人微信接收。只读检查当前投递/回调代码，确认现有企业应用text/touser和成员作用域即可复用微信插件，不需要新增业务渠道、修改凭证、开端口、部署代码或重启服务；不安装ClawBot或第三方转发平台，不向个人号好友/群开放任意群发。
+- 先明确给出企业微信后台“我的企业→微信插件”、本人扫码关注、组织/应用应出现的操作路径。操作者确认“已关注并能看到应用，可发1条测试消息”；仅将该回复视为向当前唯一成员发送1条明确验收测试的授权，不扩大到其他成员/广播。
+- 实际执行 `.venv\Scripts\python.exe tmp/deploy-subscriptions.py status`：生产仍0c988da…、app/worker均healthy、监控true、schema3、独立订阅开启且唯一有效成员与原拥有者一致，待发送/意图任务0、数据库完整性ok。个人配置已由此前用户操作变为版本2，本轮不覆盖回迁移时的版本1或旧全局配置。
+- 实际执行 `tmp/wechat-plugin-acceptance.py preflight`：只读核验当前组织/唯一有效成员/现有收件人，企业微信token鉴权和应用信息接口成功，应用身份匹配且可见范围显式包含该成员；输出仅布尔、数量和配置指纹，不输出token、成员标识或完整消息。
+- 随后执行 `tmp/wechat-plugin-acceptance.py send wechat-plugin-20261022T125620Z`：北京时间20:56:31，复用WeComClient.send_chunk，send_requests1、API接受1条；唯一收件人与既有已准入成员一致。持久账本 `/srv/stock-watch/shared/data/acceptance/wechat-plugin-20261022T125620Z.json` 记录启动/调用/接口结果，同一run_id再次执行会拒绝；网络结果不明不自动补发，也没有为两个客户端分别发送。
+- 操作者明确确认“个人微信已收到，查看监控也能回复”，据此标记当前成员的个人微信文字收件与只读双向操作验收完成。服务器API无法识别最终展示客户端，不把code0或服务端字段当作手机确认；真实客户端结论来自本人反馈。
+- 实际执行 `tmp/wechat-plugin-acceptance.py status 2026-10-22T12:56:20+00:00`：同一窗口新增inbox2，完成且已发送的定向回执配对2，接收身份、touser、成员ID及组织一致；未读取或打印完整正文，不独立断言这两条消息均来自某个客户端。本次人工测试投递只有1条，用户主动消息的正常回执另外处理，不将两者混淆。
+- 验收前后个人配置版本2、配置指纹一致、integrity_check=ok，MONITOR_ENABLED始终true、代码/镜像版本不变；未修改名单、关注点、成员、应用可见范围或后台凭证。验收工具未调用新闻/模型接口、未强制运行监控，既有后台服务继续按原授权工作。
+- 完整离线 `.venv\Scripts\python.exe -m pytest -q`：**368 passed, 1 skipped in 123.04s**；唯一跳过为既有Windows真实Linux软链接用例。个人微信接通属于账号绑定与既有协议路径验收，不因没有业务代码diff就虚构新适配器或部署。
+- 新增PERSONAL_WECHAT使用/后续成员接入/故障排查说明，同步README、PLAN、FUTURE_ROADMAP和WECOM_SETUP。当前成员可直接使用个人微信现有应用入口；其他成员、媒体类型及自然新新闻命中投递仍按实际条件分别验收。
