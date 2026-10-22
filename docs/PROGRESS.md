@@ -187,3 +187,12 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - `tmp/verify-live-deployment.py 1561161b3153d3c720c1947781fe66b12290968a` 只读验收通过：公网服务ready、worker心跳版本一致、MONITOR_ENABLED=false、schema2/config_version1、outbox0/tasks0、数据库完整性ok。文档提交未触发部署，故按实际发布SHA校验。
 - 当前需操作者在企业微信管理员后台放行上述IP并保存 `https://stock.janettepa.uk/wecom/callback`，Token/EncodingAESKey使用私密文件既有值。若后台要求域名校验，交由助手处理服务器验证文件。真实指定成员投递、双向指令、付费模型推理和新闻联调仍未验收；旧云函数保持运行，新监控保持关闭。
 - 本轮未修改业务代码或测试，仅修改私密运行配置及文档；未重复运行已通过256项的离线测试。
+
+## 企业微信后台字符限制兼容修正（2026-10-22）
+
+- 操作者后台提示：配置可信IP前须先设置可信域名或接收消息服务器URL；EncodingAESKey只允许字母数字。仅格式检查确认原AESKey长度43，但非纯字母数字，原因是助手此前一次性生成标准Base64时可能包含+/，与后台UI不兼容。
+- 已采用随机32字节→完整标准Base64去padding→仅接受ASCII字母数字43位候选的拒绝采样，并验证严格解码32字节及重新编码一致。仅轮换AES字段，保留Token、企业/应用/成员资料、DeepSeek、PUSH_TOKEN等其他值；不修改底层协议解密逻辑或官方向量兼容性。
+- 实际执行 `tmp/rotate-wecom-aes.py`，更新既有本机私密文件以保留ACL，再复用空队列/私密备份/SQLite备份/原子环境更新/容器重建流程同步服务器，摘要核对本地与app/worker实际配置一致。未显示新旧密钥。新备份为 `pre-wecom-20261022T030254596469Z.db`。
+- `tmp/wecom-config.py` 校验通过，并新增后台字符范围检查；`tmp/probe-wecom-config.py --callback-only` 的公网新Key加密GET回显和错误签名403均通过；只读运行验收仍schema2/config_version1、数据库完整性ok、outbox0/tasks0、worker心跳正常、监控false。
+- 实际执行完整离线回归 `.venv\Scripts\python.exe -m pytest -q`：**256 passed in 43.24s**。未发送微信消息、未调用模型推理，旧云函数未修改。
+- 当前需管理员重新读取本机私密文件的新AES值，先保存API接收回调（URL、Token不变），成功后再添加可信IP66.135.8.221。服务端合成验证已通过，企业微信后台保存与真实收发仍待用户反馈验收。
