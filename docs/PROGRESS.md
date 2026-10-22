@@ -168,3 +168,10 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 公网 `/ready`、app版本、worker本轮心跳均为1561161…；两个容器healthy、10001:10001、readonly=true，同镜像digest为 `sha256:fff4a68c5484da99e50c599dfc10cea0814584d76334d11c52f7d7b019f1aca8`。
 - 实际执行只读验收 `tmp/verify-live-deployment.py`：MONITOR_ENABLED=false、schema2/config_version1、outbox0/tasks0；正式数据库integrity_check=ok。最新自动备份 `pre-image-20261022T011438255779Z.db` 的完整性、schema和配置版本均一致；未恢复覆盖正式库。
 - 阶段4的推送→离线测试→GitHub镜像构建→受限自动部署主流程已真实验通。末次记录只更新本进度文档，以 `[skip ci]` 提交避免验收记录自身反复触发发布；运行版本仍以上述1561161业务发布为准，后续普通代码推送继续自动部署。
+
+## 企业微信资料准备（2026-10-22）
+
+- 操作者确认DeepSeek API Key已有、旧云函数仍在运行。保留旧流程进行并行联调；停旧/导seen仅适用于后续明确选择新系统接管的切换方案，不是创建应用或联调前置条件。
+- 已核对保留旧代码使用COS seen与ServerChan，新服务使用独立SQLite与企业微信；同时启用相同目标可能产生重复分析/通知，但不会互相覆盖去重状态。新监控继续关闭，未修改旧函数。
+- 已创建本机 `.env.production.local`：只允许当前用户读取、git check-ignore确认排除；回调Token/AES Key自动生成且未显示内容。企业微信应用资料、成员UserID和已有模型密钥由操作者填入空项，尚未上传服务器或调用真实接口。
+- 已更新 `docs/WECOM_SETUP.md` 的创建应用、字段来源和并行/接管边界；本轮仅文档和忽略配置模板变化，无业务代码修改，不重复运行离线测试。
