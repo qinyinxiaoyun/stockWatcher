@@ -161,3 +161,10 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 自动生成备份 `pre-image-20261022T010744322836Z.db`；只读核对integrity_check=ok、schema2/config_version1，与正式库相同。文件名用UTC；没有覆盖恢复正式库。
 - 项目AGENTS新增执行偏好：在已授权范围由助手直接配置、测试、推送、部署并核实，仅在确需操作者时询问；监控/真实投递/权限扩张仍保留原约束。
 - 后续仅凭证换行兼容与文档修订会再经同一流程发布；生产故障回退、整机重启、长期资源峰值、异地备份、真实微信/模型/新闻、旧系统切换仍不标为完成。
+
+### 最终普通推送验证（2026-10-22）
+
+- 普通推送 `1561161b3153d3c720c1947781fe66b12290968a` 后，无需手工服务器命令触发发布；工作流 <https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39704277693> 的test、image、deploy全部success。Windows凭证换行兼容修复已进入正式工作流。
+- 公网 `/ready`、app版本、worker本轮心跳均为1561161…；两个容器healthy、10001:10001、readonly=true，同镜像digest为 `sha256:fff4a68c5484da99e50c599dfc10cea0814584d76334d11c52f7d7b019f1aca8`。
+- 实际执行只读验收 `tmp/verify-live-deployment.py`：MONITOR_ENABLED=false、schema2/config_version1、outbox0/tasks0；正式数据库integrity_check=ok。最新自动备份 `pre-image-20261022T011438255779Z.db` 的完整性、schema和配置版本均一致；未恢复覆盖正式库。
+- 阶段4的推送→离线测试→GitHub镜像构建→受限自动部署主流程已真实验通。末次记录只更新本进度文档，以 `[skip ci]` 提交避免验收记录自身反复触发发布；运行版本仍以上述1561161业务发布为准，后续普通代码推送继续自动部署。
