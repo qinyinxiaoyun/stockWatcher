@@ -1,6 +1,6 @@
 # 项目进度
 
-更新时间：2026-10-21（Asia/Shanghai）
+更新时间：2026-10-22（Asia/Shanghai）
 
 ## 已确认基线
 
@@ -124,3 +124,30 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - GitHub实际构建、容器SQLite版本、镜像首次切换与故障回退演练，以实际工作流与服务器结果为准，不能以离线测试替代。
 - SSH推送权限已可用；管理仓库Secrets/Variables需要GitHub API授权。首次官方CLI设备登录因网络超时未保存，正在使用官方设备授权协议重试；凭证仅保存本地已忽略.env，不进入代码、日志或聊天。
 - `DEPLOY_ENABLED` 尚未开启；首次监控保持false，真实微信/模型/新闻联调与旧系统迁移切换沿阶段3单独验收。
+
+## 阶段 4 续作：受限自动部署（2026-10-22）
+
+- 已提交并推送 `bcfb607547d6a5d214379bf95f1a0eeae9b9097e` 到操作者指定的公开仓库。首次真实工作流 <https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39620179381> 的test与image任务均成功；deploy因尚未配置开关而跳过。
+- GitHub真实构建已发布amd64/arm64镜像并通过无网络容器初始化；日志确认容器SQLite3.46.1。不能再把镜像构建标为未验证。服务器此时仍运行阶段3首次部署版本。
+- 操作者已完成设备授权；本地凭证只存已忽略的 `.env.github`，API核对账号为qinyinxiaoyun且对该仓库具有admin权限；不在聊天或日志输出Token。
+- 原先不限制命令的root专用密钥方案被自动审批拒绝，未执行。已改为 `restrict,command="/usr/bin/python3 -I /srv/stock-watch/deploy-tools/github-gate.py"`：仅接收固定deploy命令、16KiB内的严格JSON、本仓库digest和完整SHA；不接受脚本、路径、额外字段或队列审批豁免。
+- 新增root控制的 `deploy/github-gate.py`（宿主机工具兼容Python3.8，业务仍Python3.12）及86项纯离线测试；固定读取root不可组写的Compose/脚本，净化执行环境，Docker临时登录目录结束清理。安装时按公钥本身移除该密钥的重复记录，保留其他管理密钥。
+- `.github/workflows/build-deploy.yml` 已改为只向固定deploy命令发送结构化请求，不再SCP上传脚本或执行通用远程shell。部署工具更新通过原有可信管理连接独立审核安装。
+
+### 本轮实际验证
+
+| 实际执行 | 结果 |
+| --- | --- |
+| `.venv\Scripts\python.exe -m pytest tests/test_github_gate.py -q` | 86 passed，包含命令/JSON/注入/路径权限/软链接/登录失败/凭证清理 |
+| `.venv\Scripts\python.exe -m pytest -q` | **256 passed in 44.01s**，完全离线 |
+| `tmp/actionlint/actionlint.exe -shellcheck= .github/workflows/build-deploy.yml`；`git diff --check` | 通过 |
+| 既有严格SSH连接检查目录权限及 `docker ps` | /srv和项目根目录root755，shared为root700；原app/worker持续healthy |
+
+### 受限入口与仓库配置实际结果
+
+- 经既有可信管理SSH安装root控制的gate、固定Compose和部署脚本，文件统一LF。GitHub专用公钥使用restrict和Python隔离模式forced command；没有授予通用root shell。
+- 已设置仓库Secrets `DEPLOY_SSH_KEY`、`DEPLOY_KNOWN_HOSTS` 及Variables `DEPLOY_HOST`、`DEPLOY_PORT`、`DEPLOY_USER`；设置过程使用标准输入传递凭证且不显示内容。配置核对时 `DEPLOY_ENABLED=false`。
+- 使用该新密钥、关闭SSH代理/其他身份后实际测试：请求 `id` 返回1并明确拒绝非deploy命令；请求 `deploy` 加空对象返回1并明确拒绝无效请求。这两项证明实际SSH限制生效，不只是配置文本检查。
+- Windows首次验证因本地私钥继承了额外ACL被SSH拒绝；已只收紧本项目两个忽略凭证文件的ACL到当前用户，再次验证通过。没有为此放宽SSH权限。
+
+接下来开启仓库部署开关并推送本提交，实际镜像切换及验收结果继续记录；自动监控开关仍保持false。

@@ -18,19 +18,21 @@
 | --- | --- |
 | `DEPLOY_HOST` | 服务器主机名或 IPv4 |
 | `DEPLOY_PORT` | SSH 端口，默认 22 |
-| `DEPLOY_USER` | 当前入口要求 root；后续可另行收紧为受限部署用户 |
+| `DEPLOY_USER` | root，专用密钥必须配置固定 forced command，不能获得通用 root shell |
 | `DEPLOY_ENABLED` | 先保持未设置；验收和凭证准备完毕后设为 `true` |
 
 设置 Secrets：
 
 | 名称 | 内容 |
 | --- | --- |
-| `DEPLOY_SSH_KEY` | 仅供该仓库部署的专用 SSH 私钥，不复用个人 SSH 私钥 |
+| `DEPLOY_SSH_KEY` | 仅供该仓库部署的专用 SSH 私钥；服务器以 `restrict,command="/usr/bin/python3 -I /srv/stock-watch/deploy-tools/github-gate.py"` 限制用途，不复用个人 SSH 私钥 |
 | `DEPLOY_KNOWN_HOSTS` | 已通过现有可信 SSH 连接核对的服务器公钥记录；非 22 端口使用 `[host]:port` 格式 |
 
-GHCR 登录使用工作流短期 `GITHUB_TOKEN`，不要求另存长期 PAT。远端部署临时 Docker 登录目录在任务结束时清理。企业微信、DeepSeek、推送凭证只保存在服务器共享 `.env`，不上传到 GitHub。
+GHCR 登录使用工作流短期 `GITHUB_TOKEN`，不要求另存长期 PAT。工作流只通过 SSH 的固定 `deploy` 命令发送有大小限制的结构化请求；服务器入口只接受本仓库的镜像digest、SHA、合法账号和临时拉取凭证，拒绝其他命令、任意文件上传及额外字段。远端临时 Docker 登录目录由入口结束时清理。企业微信、DeepSeek、推送凭证只保存在服务器共享 `.env`，不上传到 GitHub。
 
-首次部署保持 `MONITOR_ENABLED=false`。该开关不会禁止 worker 消费已有管理任务和 outbox；脚本会检查待消费队列，非空时停止，只有操作者已核实并通过受控入口显式提供 `WORKER_QUEUE_APPROVED=true` 才能继续。GitHub 工作流默认不提供此豁免。
+服务器受控入口 `deploy/github-gate.py` 与固定的 Compose/部署脚本由助手通过已有可信管理连接安装到 `/srv/stock-watch/deploy-tools/`，必须为root所有且组/其他用户不可写。GitHub密钥无法更改这些部署工具，也不能运行SSH shell、SCP、SFTP或端口转发；工具更新须经管理连接重新审核安装。镜像中的业务代码仍以UID10001运行。
+
+首次部署保持 `MONITOR_ENABLED=false`。该开关不会禁止 worker 消费已有管理任务和 outbox；脚本会检查待消费队列，非空时停止。GitHub受限入口不能提供队列豁免；确需消费已有队列时，须经可信管理连接单独审核，才能在该次手动执行提供 `WORKER_QUEUE_APPROVED=true`。
 
 ## 部署入口及持久目录
 

@@ -85,7 +85,7 @@ jobs:
     if: vars.DEPLOY_ENABLED == 'true'
     needs: image
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     environment: production
     concurrency:
       group: stock-watch-production
@@ -108,7 +108,7 @@ jobs:
           else
             echo 'A newer main commit exists; skipping this server update.'
           fi
-      - name: Transfer release and update server
+      - name: Request deployment through the restricted server entry point
         if: steps.current.outputs.deploy == 'true'
         shell: bash
         env:
@@ -129,7 +129,7 @@ jobs:
           ((10#$DEPLOY_PORT >= 1 && 10#$DEPLOY_PORT <= 65535))
           [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]]
           [[ "$GHCR_USER" =~ ^[a-zA-Z0-9][a-zA-Z0-9_-]*(\[bot\])?$ ]]
-          [[ "$IMAGE" =~ ^ghcr\.io/[a-z0-9._/-]+@sha256:[0-9a-f]{64}$ ]]
+          [[ "$IMAGE" =~ ^ghcr\.io/qinyinxiaoyun/stockwatcher@sha256:[0-9a-f]{64}$ ]]
           [[ -n "$DEPLOY_SSH_KEY" && -n "$DEPLOY_KNOWN_HOSTS" ]]
           key="$RUNNER_TEMP/stock-watch-deploy-key"
           known="$RUNNER_TEMP/stock-watch-known-hosts"
@@ -141,20 +141,9 @@ jobs:
                     -o ConnectTimeout=15 -o ServerAliveInterval=15
                     -o ServerAliveCountMax=3 -i "$key")
           remote="$DEPLOY_USER@$DEPLOY_HOST"
-          release="/srv/stock-watch/image-releases/$GITHUB_SHA"
-          auth="$release/.docker-auth-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           cleanup() {
-            ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
-              "rm -f '$auth/config.json'; rmdir '$auth' 2>/dev/null || true" || true
             rm -f "$key" "$known"
           }
           trap cleanup EXIT
-          ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
-            "umask 077; mkdir -p '$release/scripts' '$auth'"
-          scp "${ssh_args[@]}" -P "$DEPLOY_PORT" compose.registry.yaml "$remote:$release/"
-          scp "${ssh_args[@]}" -P "$DEPLOY_PORT" scripts/deploy-image.sh "$remote:$release/scripts/"
-          printf '%s' "$GHCR_TOKEN" | ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
-            "docker --config '$auth' login ghcr.io --username '$GHCR_USER' --password-stdin >/dev/null"
-          unset GHCR_TOKEN
-          ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" \
-            "DOCKER_CONFIG='$auth' bash '$release/scripts/deploy-image.sh' '$IMAGE' '$GITHUB_SHA'"
+          python3 -c 'import json, os, sys; json.dump({"schema": 1, "image": os.environ["IMAGE"], "sha": os.environ["GITHUB_SHA"], "registry_user": os.environ["GHCR_USER"], "registry_token": os.environ["GHCR_TOKEN"]}, sys.stdout)' \
+            | ssh "${ssh_args[@]}" -p "$DEPLOY_PORT" "$remote" deploy
