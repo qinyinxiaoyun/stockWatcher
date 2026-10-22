@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -9,21 +10,83 @@ from datetime import datetime, timedelta, timezone
 from .config import ConfigError, ConfigStore, ConfigVersionConflict
 from .db import connect, init_db
 from .intent import DeepSeekIntentClient, IntentError
+from .subscriptions import MemberConfigStore, MemberRegistry, MembershipError
 
 LOG = logging.getLogger(__name__)
+MAX_PENDING_TASKS = 100
+MAX_MEMBER_PENDING_TASKS = 10
+MAX_RUNNING_TASKS = 4
+MAX_MEMBER_RUNNING_TASKS = 1
 
 
 def now_text():
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def queue_reply(conn, message_id, user, text):
+def queue_reply(conn, message_id, user, text, *, member=None):
     stamp = now_text()
+    payload = {"kind": "receipt", "touser": user, "text": text}
+    if member is not None:
+        if user != member.user_id:
+            raise PermissionError("receipt_recipient_mismatch")
+        payload.update(member_id=member.id, member_generation=member.generation, corp_id=member.corp_id)
     conn.execute(
         "INSERT OR IGNORE INTO outbox(event_key,payload_json,available_at,created_at) VALUES(?,?,?,?)",
-        ("reply:" + message_id, json.dumps({"kind": "receipt", "touser": user, "text": text},
-                                         ensure_ascii=False), stamp, stamp),
+        ("reply:" + message_id, json.dumps(payload, ensure_ascii=False), stamp, stamp),
     )
+
+
+def _authorized_member(conn, settings, user):
+    enabled = conn.execute("SELECT 1 FROM app_meta WHERE key='independent_subscriptions'").fetchone()
+    if enabled:
+        try:
+            registry = MemberRegistry(conn, settings.wecom_corp_id)
+            if not registry.is_enabled():
+                raise PermissionError("unauthorized_organization")
+            member = registry.get(user)
+            if member is None or not member.active:
+                raise PermissionError("unauthorized_member")
+            return member
+        except MembershipError:
+            raise PermissionError("unauthorized_member") from None
+    if user not in settings.wecom_admin_userids:
+        raise PermissionError("unauthorized_administrator")
+    return None
+
+
+def authorize_callback(settings, user):
+    """The HTTP gate follows the same registry rules as the durable handler."""
+    conn = connect(settings.database_path, busy_timeout_ms=700)
+    try:
+        init_db(conn)
+        _authorized_member(conn, settings, user)
+    finally:
+        conn.close()
+
+
+def _context_key(user, member):
+    return user if member is None else f"member:{member.id}:{member.generation}"
+
+
+def _task_member(conn, settings, payload):
+    member = _authorized_member(conn, settings, payload["user"])
+    if member is None:
+        if "member_id" in payload:
+            raise PermissionError("member_mode_required")
+    elif (payload.get("member_id") != member.id
+          or payload.get("member_generation") != member.generation
+          or payload.get("corp_id") != member.corp_id):
+        # Old global tasks never acquire member access when the mode changes.
+        raise PermissionError("stale_member_scope")
+    return member
+
+
+def _store(conn, member):
+    return ConfigStore(conn) if member is None else MemberConfigStore(conn, member.id)
+
+
+def _task_owner(payload):
+    return (payload.get("corp_id"), payload.get("member_id")) if "member_id" in payload else ("legacy", payload.get("user"))
 
 
 def _format_snapshot(snapshot):
@@ -85,19 +148,20 @@ class CallbackService:
 
         user = message["from_user"]
         message_id = message["message_id"]
-        if user not in self.settings.wecom_admin_userids:
-            raise PermissionError("unauthorized administrator")
         conn = connect(self.settings.database_path, busy_timeout_ms=700)
         try:
             init_db(conn)
             conn.execute("BEGIN IMMEDIATE")
+            member = _authorized_member(conn, self.settings, user)
+            if member is not None:
+                digest = hashlib.sha256(str(message_id).encode("utf-8")).hexdigest()
+                # Upstream deduplication survives revocation/reactivation;
+                # generation belongs to authorization, not message identity.
+                message_id = f"member:{member.id}:{digest}"
+            context_key = _context_key(user, member)
             if conn.execute("SELECT 1 FROM inbox WHERE message_id=?", (message_id,)).fetchone():
                 conn.rollback()
                 return
-            # Pending tasks are bounded; WeCom will retry a rejected callback.
-            pending = conn.execute("SELECT count(*) FROM async_tasks WHERE status IN ('pending','running')").fetchone()[0]
-            if pending >= 100:
-                raise RuntimeError("management queue full")
             conn.execute(
                 "INSERT INTO inbox(message_id,user_id,payload_json,status,created_at) VALUES(?,?,?,?,?)",
                 (message_id, user, json.dumps(dict(message), ensure_ascii=False), "pending", now_text()),
@@ -108,15 +172,15 @@ class CallbackService:
                 return
             text = message.get("content", "").strip()
             if not text or len(text) > 2000:
-                queue_reply(conn, message_id, user, "消息为空或过长，请发送“帮助”。")
+                queue_reply(conn, message_id, user, "消息为空或过长，请发送“帮助”。", member=member)
                 conn.execute("UPDATE inbox SET status='done',processed_at=? WHERE message_id=?", (now_text(), message_id))
                 conn.commit()
                 return
-            store = ConfigStore(conn)
+            store = _store(conn, member)
             try:
                 parsed = parse_command(text)
             except ConfigError as exc:
-                queue_reply(conn, message_id, user, str(exc))
+                queue_reply(conn, message_id, user, str(exc), member=member)
                 conn.execute("UPDATE inbox SET status='done',processed_at=? WHERE message_id=?", (now_text(), message_id))
                 conn.commit()
                 return
@@ -126,15 +190,21 @@ class CallbackService:
                     reply = result.text if hasattr(result, "text") else str(result)
                     if result.status == "updated":
                         operation = getattr(parsed, "operation", None)
-                        _save_context(conn, user, _operation_context(result.snapshot, [operation] if operation else []))
+                        _save_context(conn, context_key, _operation_context(result.snapshot, [operation] if operation else []))
                 except ConfigError as exc:
                     reply = str(exc)
-                queue_reply(conn, message_id, user, reply)
+                queue_reply(conn, message_id, user, reply, member=member)
                 conn.execute("UPDATE inbox SET status='done',processed_at=? WHERE message_id=?", (now_text(), message_id))
             else:
                 snapshot = store.snapshot().to_dict()
                 payload = {"message_id": message_id, "user": user, "text": text,
-                           "snapshot": snapshot, "context": _context(conn, user)}
+                           "snapshot": snapshot, "context": _context(conn, context_key)}
+                if member is not None:
+                    payload.update(member_id=member.id, member_generation=member.generation, corp_id=member.corp_id)
+                pending = conn.execute("SELECT payload_json FROM async_tasks WHERE status IN ('pending','running')").fetchall()
+                owned = sum(_task_owner(json.loads(row[0])) == _task_owner(payload) for row in pending)
+                if len(pending) >= MAX_PENDING_TASKS or owned >= MAX_MEMBER_PENDING_TASKS:
+                    raise RuntimeError("management queue full")
                 stamp = now_text()
                 conn.execute(
                     "INSERT INTO async_tasks(task_key,task_type,payload_json,available_at,created_at,updated_at) VALUES(?,?,?,?,?,?)",
@@ -154,10 +224,18 @@ class CallbackService:
         try:
             init_db(conn)
             conn.execute("BEGIN IMMEDIATE")
-            task = conn.execute(
+            candidates = conn.execute(
                 "SELECT * FROM async_tasks WHERE task_type='intent' AND ((status='pending' AND available_at<=?) "
-                "OR (status='running' AND locked_until<?)) ORDER BY id LIMIT 1", (now_text(), now_text())
-            ).fetchone()
+                "OR (status='running' AND locked_until<?)) ORDER BY id", (now_text(), now_text())
+            ).fetchall()
+            running = conn.execute(
+                "SELECT payload_json FROM async_tasks WHERE task_type='intent' AND status='running' AND locked_until>=?",
+                (now_text(),),
+            ).fetchall()
+            if len(running) < MAX_RUNNING_TASKS:
+                owners = [_task_owner(json.loads(row[0])) for row in running]
+                task = next((row for row in candidates if owners.count(_task_owner(json.loads(row["payload_json"])))
+                             < MAX_MEMBER_RUNNING_TASKS), None)
             if task is None:
                 conn.rollback()
                 return False
@@ -170,16 +248,34 @@ class CallbackService:
             conn.commit()
             payload = json.loads(task["payload_json"])
             user, message_id = payload["user"], payload["message_id"]
-            if user not in self.settings.wecom_admin_userids:
+            member = None
+            authorized = False
+            try:
+                member = _task_member(conn, self.settings, payload)
+                authorized = True
+                actual_version = _store(conn, member).snapshot().config_version
+                if actual_version != payload["snapshot"]["config_version"]:
+                    raise ConfigVersionConflict(payload["snapshot"]["config_version"], actual_version)
+            except PermissionError:
+                authorized = False
                 reply = "该成员已无管理权限，未执行修改。"
                 plan = None
-            else:
+            except ConfigVersionConflict:
+                reply = "配置已被其他操作更新，本次未修改。请查看监控后重新发送请求。"
+                plan = None
+            if authorized and actual_version == payload["snapshot"]["config_version"]:
                 try:
                     # A stored snapshot prevents silently rebasing model edits.
                     class Snapshot:
                         def to_dict(self):
                             return payload["snapshot"]
                     plan = self.intent_client.parse(payload["text"], Snapshot(), payload.get("context"))
+                    # Revalidate the result against the frozen member snapshot;
+                    # no model field can select a recipient or another member.
+                    from .intent import validate_intent
+                    if plan.config_version != payload["snapshot"]["config_version"]:
+                        raise IntentError("模型返回的版本无效，配置未修改。")
+                    plan = validate_intent({"operations": list(plan.operations)}, Snapshot(), payload.get("context"))
                     reply = None
                 except (IntentError, TimeoutError, OSError) as exc:
                     plan = None
@@ -189,11 +285,19 @@ class CallbackService:
             if current_task["status"] != "running" or current_task["last_error"] != claim:
                 conn.rollback()
                 return False
+            try:
+                member = _task_member(conn, self.settings, payload)
+            except PermissionError:
+                # Reauthorization also happens after the model call. Revoked
+                # tasks produce no receipt containing the old private data.
+                authorized = False
+                plan = None
+                reply = "该成员已无管理权限，未执行修改。"
             if plan is not None:
                 try:
-                    store = ConfigStore(conn)
+                    store = _store(conn, member)
                     actual_version = store.snapshot().config_version
-                    if not plan.query and actual_version != plan.config_version:
+                    if actual_version != plan.config_version:
                         raise ConfigVersionConflict(plan.config_version, actual_version)
                     if plan.query:
                         reply = _format_snapshot(store.snapshot())
@@ -208,12 +312,13 @@ class CallbackService:
                             expected_version=plan.config_version, source="wecom-natural-language", source_message_id=message_id)
                         reply = (f"已保存 {len(plan.operations)} 项修改，配置 v{snapshot.config_version}，生效时间 {now_text()}。"
                                  "在下一次定时任务开始时读取。")
-                        _save_context(conn, user, _operation_context(snapshot, plan.operations))
+                        _save_context(conn, _context_key(user, member), _operation_context(snapshot, plan.operations))
                 except ConfigVersionConflict:
                     reply = "配置已被其他操作更新，本次未修改。请查看监控后重新发送请求。"
                 except ConfigError as exc:
                     reply = f"配置未修改：{exc}"
-            queue_reply(conn, message_id, user, reply)
+            if authorized:
+                queue_reply(conn, message_id, user, reply, member=member)
             stamp = now_text()
             conn.execute("UPDATE async_tasks SET status='done',completed_at=?,updated_at=?,locked_until=NULL,last_error=NULL WHERE id=?",
                          (stamp, stamp, task["id"]))
@@ -237,7 +342,12 @@ class CallbackService:
                     ).rowcount
                     if changed and attempts >= 5:
                         saved = json.loads(task["payload_json"])
-                        queue_reply(conn, saved["message_id"], saved["user"], "处理失败，配置未修改。请使用明确指令重新发送。")
+                        try:
+                            current_member = _task_member(conn, self.settings, saved)
+                        except PermissionError:
+                            pass
+                        else:
+                            queue_reply(conn, saved["message_id"], saved["user"], "处理失败，配置未修改。请使用明确指令重新发送。", member=current_member)
                     conn.commit()
                 except Exception:
                     conn.rollback()

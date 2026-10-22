@@ -240,3 +240,65 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - **本轮发布恢复修复已完成并上线到服务代码；正式监控切换未进行。** MONITOR_ENABLED仍false，三只股票和关注配置未变；不导入旧seen，不修改旧云函数，非交易时段切换由操作者安排，系统升级暂不纳入。没有新增真实模型、新闻或消息投递调用。
 - 五项故障注入发生在独立Docker项目，不宣称对生产实例做过故障注入、整机重启或长期压力验收。正式调度/首轮基线/筛选投递、真实配置变更与自然语言管理、异地备份和整机重启仍沿原计划分别验收；它们未被本轮发布恢复修复悄然启用。
 - 本节最终只更新交付记录，以 `[skip ci]` 提交避免记录自身再次部署；实际运行SHA仍为上述f104a7b业务发布，后续普通代码推送继续走同一受限自动发布流程。
+
+## 未来功能可行性与路线规划（2026-10-22）
+
+- 操作者提出组织内多微信成员独立订阅、个人微信接收和更多信息源，要求先分析并加入未来计划。本轮只修改文档，不实现业务功能，不访问生产、不推送/部署、不修改成员/名单/凭证、不启用监控或真实接口投递；当前服务状态仍以上次验收为准，未冒充本轮重新在线核查。
+- 已读取现有配置/数据库、回调权限、抓取、模型分析、seen/outbox及worker源码，并行只读复审。确认当前是全局名单+全局seen+文章级outbox+多收件人同内容，尚无个人订阅隔离，抓取和分析也尚未并行。
+- 新增 `docs/FUTURE_ROADMAP.md` 并纳入PLAN阶段5～7：个人微信渠道最小验证→成员订阅/共享抓取和关注组分析→逐源审核启用。AI首版按真实分析需求分组复用，不按成员机械重复调用；分别记录成员投递、基线、撤权和崩溃恢复要求。
+- 已查腾讯官方API/订阅消息资料、Tencent/openclaw-weixin官方README与协议、公告/正式数据服务及HKEX条款/IIS。微信插件账号能力和真实收发仍待确认；ClawBot有官方实现，但客户端字段可选不等于主动推送服务端保证；未采用第三方固定额度作承诺。部分企业微信帮助/开发页面本次读取受限，明确留待实际账号核验。
+- 信息源按用途许可和技术接口双重门槛规划：优先合规A股公告/IR/可选SEC，HKEX等先取得适用授权；不把公开网页或robots许可等同于可抓取、AI处理和多人分发权。未申请服务、调用付费接口或承诺供应商费用。
+- 实际执行 `.venv\Scripts\python.exe -m pytest -q`：**277 passed, 1 skipped in 114.49s**（Windows真实Linux软链接用例跳过，非新增失败）；`git diff --check`通过。仅docs变更，未提交/推送或触发CI/部署。未来需求状态均为规划，不能替代现有正式切换或称为已实现。
+
+## 新监控正式启用与自然首轮验收（2026-10-22）
+
+- 操作者明确要求“现在打开新的监控”，并在确认问题中回答“已停用，且没有运行中的任务”，确认旧服务全部定时触发器已停用、无运行任务。该授权允许既定监控流程的真实抓取、模型调用及原配置成员投递，不包括随意测试广播或未来多成员/信息源功能。旧平台停用依据操作者确认，助手未登录腾讯云后台独立核查，未删除旧函数或COS。
+- 保留前一任务尚未提交的未来计划文档。本轮未改业务代码、未推送/部署镜像、未升级系统、未导入旧seen、未增加来源/成员/股票/关注点；只把生产共享环境MONITOR_ENABLED=false改为true。
+- 启用前实际执行 `tmp/release-recovery-ops.py snapshot` 和 `tmp/activate-monitor.py status`：app/worker均f104a7b…/healthy/monitor=false，schema2/config_version1、3只股票、themes0、seen0/baseline0、monitor_runs0、async_tasks0，outbox仅之前帮助回执sent1且待消费0。原始目标effective_at为初始epoch，满足静默基线语义；既有凭证和唯一收件人只做存在/格式检查，没有打印内容或发送测试消息。
+- 已实际执行 `.venv\Scripts\python.exe tmp/activate-monitor.py enable`：通过原有严格管理SSH，在共享deploy.lock下核对可信发布与旧健康/新鲜心跳→复查空队列→停止旧app/worker→备份环境及SQLite→原子改一行开关→同镜像重建app及唯一worker→核对两服务全部实际环境除MONITOR_ENABLED外逐项相同。没有改GitHub受限入口、密钥、反向代理或数据库内容来强行过检。
+- 运行切换时间为UTC `2026-10-22T06:39:04.414491+00:00`（北京时间14:39:04），属于既定工作日监控窗口。此前“非交易时段切换”的计划由本轮明确的立即启用指令取代；未伪称这次发生于非交易时段。数据库备份 `pre-monitor-20261022T063857380383Z.db` 完整性ok、配置指纹一致，环境原件备份root0600；正式库未从备份覆盖。
+- app/worker仍使用相同不可变镜像 `ghcr.io/qinyinxiaoyun/stockwatcher@sha256:23b40bfc8ab96933426ab0f5c8e5d0d8cfb44f3b3e0393f57aec8d500dd53a74`，BUILD_SHA仍f104a7b…，MONITOR_ENABLED在二者内均true、healthy、UID10001、只读根文件系统，新心跳已核对。公网 `/health` 和 `/ready` 均code0/SHA匹配。
+- **自然首轮14:35时槽**按5分钟宽限机制在14:39:05认领，14:39:20成功完成：fetched239、eligible63、baseline_seen63、analyzed0、queued0、error_count0、耗时15.584秒。3个股票的基线键逐个存在。基线覆盖首次实际返回窗口新闻，不宣称覆盖全网历史；未执行强制monitor、dry-run real、补查或额外定时器。
+- **下一自然14:40时槽**14:40:00开始、14:40:14成功：fetched239、eligible63、baseline_seen0、analyzed0、queued0、error_count0、耗时13.764秒。两个自然轮次均无模型分析或新预警；这验证了基线和定时去重，但不能称为已真实命中并投递新的重大/重要新闻。
+- 最终只读状态：schema2/config_version1、configuration_fingerprint始终 `d492eb01aaa3f17359f037f590aa926242b51792a8b01e192b4cf945aa97828b`，名单和关注点/等级未变，seen63、baseline3、outbox仍sent1、pending/tasks0，两个monitor_runs均succeeded，integrity_check=ok。日志只提取轮次、计数和耗时，不打印文章正文、收件人或凭证。
+- 调度继续按Asia/Shanghai周一至周五09:00～15:00每5分钟，15:05后不执行，当前不自动排除法定休市日；首次启用后不补跑服务离线期间所有历史时槽。下一时槽按实际时钟计算，不为验收伪造时间。
+- 本轮完整离线 `.venv\Scripts\python.exe -m pytest -q`：**277 passed, 1 skipped in 113.07s**；既有Windows软链接用例跳过，无新增失败。运行配置和当前状态已同步PLAN/WECOM_SETUP/GITHUB_DEPLOY，未来需求仍为规划，不随监控启用变成已实现。
+
+## TrendRadar 源码调研与本项目对照（2026-10-22）
+
+- 本轮为分析任务，核对公开仓库 `sansan0/TrendRadar` 的 master；GitHub API 返回提交 `68c8916c450f8c8dd36cb88a189f7c2e46681ab5`，提交时间为2026-10-20T11:21:52Z。以源码为主要依据，并检查现有news/analyzer/monitor/db/config/delivery/scheduler及ARCHITECTURE/FUTURE_ROADMAP；不把规划当作已实现。
+- 抓取结论：热榜通过NewsNow统一API按平台ID请求，不是TrendRadar自身逐站维护爬虫；支持自定义API与预期域名校验。RSS直接请求feed URL，解析RSS/Atom/JSON Feed并保存feed自带摘要；主采集流程没有逐文章正文抓取。热榜与RSS采用SQLite持久化，保存首次/末次发现与排名等历史。源码：https://github.com/sansan0/TrendRadar/blob/68c8916c450f8c8dd36cb88a189f7c2e46681ab5/trendradar/crawler/fetcher.py 、同版本 `crawler/rss/fetcher.py`、`parser.py`、`storage/sqlite_mixin.py`。
+- 个性化结论：关键词匹配和AI兴趣分类是可选筛选路径，AI按兴趣文件提取标签、分批分类、存储已分析状态并处理兴趣变更；分析简报是另一步，主要输入标题/来源/排名/时间，RSS简报输入也没有使用已保存的summary。多兴趣文件和多账号推送不等于成员独立订阅；dispatcher接收同一份报告分发给配置渠道/账号，未见该主链路具有每成员订阅、权限与定向筛选。源码：同版本 `ai/filter.py`、`ai/filter_pipeline.py`、`ai/analyzer.py`、`notification/dispatcher.py`。
+- 推送结论：incremental/current/daily分别对应新增、当前、当日范围，不能将模式描述中的“零重复”等同于端到端严格一次。多账号发送任一成功即返回成功；开启once_push时任一渠道成功即记录时段执行，不能替代每成员/每渠道的持久重试。独立AI分析模式与推送模式不同时，当前主流程为避免时间窗混用，会排除RSS/独立展示区输入。源码：同版本 `__main__.py` 的 `_run_ai_analysis`、`_send_notification_if_needed`，及 `notification/dispatcher.py`。
+- 借鉴建议（尚未实施）：先扩展统一来源身份/内容版本/游标与共享文章池，再做成员订阅隔离、按实际关注需求复用AI分析、成员+渠道+事件独立投递；采集/分析/推送时段解耦作为后续配置能力。保留现有Python3.12、唯一worker、短事务和持久outbox/分段检查点。股票预警优先补公告/IR等有权使用的来源，NewsNow热榜适合作为舆情补充；不以热度代替重要性，不照搬标题简报作为证券事实判断。与FUTURE_ROADMAP现有方向一致。
+- 实际执行：公开源码经web工具读取；只读执行 `rg --files`、`rg -n`、`Get-Content`、`git status --short`，以 `Invoke-RestMethod` 查询公开提交、`Invoke-WebRequest` 阅读固定版本公开源码；执行 `.venv\Scripts\python.exe --version` 为Python3.12.12，完整离线 `.venv\Scripts\python.exe -m pytest -q` 为 **277 passed, 1 skipped in 112.76s**（既有Windows/Linux软链接差异用例跳过）。普通隔离进程因helper_unknown_error无法启动，改用已获自动审查允许的隔离外只读/离线测试命令完成。
+- 未验证项：未部署或运行TrendRadar，未实际请求NewsNow/RSS/东方财富、DeepSeek、企业微信或生产服务器；本轮不验证线上即时状态、来源覆盖率、抓取延迟、模型效果及新增来源用途许可。仅追加本节调研记录，保留工作区已有文档变更；未修改业务代码、生产配置、监控开关、订阅或收件人，未真实投递、提交或推送。
+
+## 独立订阅与AI调用粒度设计澄清（2026-10-22）
+
+- 本轮只讨论设计，未实施多成员功能。再次只读核对AGENTS、FUTURE_ROADMAP第2节、analyzer的结果与提示词、monitor分析入队及delivery收件人/检查点；执行Get-Content及git status --short，未读取凭证、运行库或生产服务器。
+- 首版建议以“文章内容版本 × 目标 × 规范化分析需求”作为逻辑分析单位，同需求成员复用；推送等级、方向偏好、渠道、静默时间等只影响本地过滤/投递，不因这些字段变化重跑模型。不同公司、关注问题、分析时间范围或私有背景分别处理；不要把不同目标压成一个总等级/方向。关注点不是排除其他重大新闻的硬筛选条件，分析结构需区分关注相关性和目标整体重要性，并保存证据与缺失信息。
+- 逻辑任务与API请求拆开：首版每文章/关注组独立请求便于验证、缓存及失败重试；后续可把同文少量公开关注组合并为一次请求，按组ID返回与独立验证，私有上下文隔离。10人×10篇且需求相同可约10次，3个关注组且每文均相关约30次，均不含重试；合并请求减少HTTP次数不等于token成本同比减少。“基础分析一次再个人补分析”可能增加调用和误差传播，作为实测后可选优化。
+- 缓存按内容hash、目标、分析需求、模型/提示词/结构版本及隔离域识别，独立订阅版本用于并发一致性，不机械导致全局缓存失效。采集、分析、成员评估及成员+渠道+文章事件投递分层；原子生成通知或可恢复分发任务，发送前复核订阅资格，新订阅默认从生效时间开始，普通配置变更不重发旧闻。
+- 外部只查阅公开工程文档以核对任务拆分/受约束输出的通用设计；不据此声称当前DeepSeek接口已具备其他供应商的特定能力。未新增测试或改业务代码；沿用上一轮同代码完整离线基线277 passed、1 skipped（112.76s），本轮未重复运行。未修改线上配置、订阅、收件人或监控开关，未调用新闻、模型或投递接口。
+
+## 独立订阅实现与TrendRadar借鉴计划落地（2026-10-22）
+
+- 操作者明确授权将前两轮分析及TrendRadar可取之处纳入计划，并按计划实现独立订阅；要求子agent优先6.1。本阶段三个实现子任务及最终复核均使用gpt-6.1-sol，主线程负责计划、CLI/worker路由、集成修复与完整验收。保留原工作区已有文档修改。
+- 已更新PLAN/FUTURE_ROADMAP，新增INDEPENDENT_SUBSCRIPTIONS实施与使用说明，同步README/ARCHITECTURE/WECOM_SETUP。借鉴统一来源身份、共享文章池、兴趣分类缓存和投递适配；采集/分析/推送时段解耦、其他渠道、舆情日报、正式来源接入及受控并发明确留在后续阶段。没有把TrendRadar本身的多账号发送当作已实现成员订阅。
+- schema3新增成员、完整个人配置、审计与确认，以及共享文章/分析、成员评估/基线表。个人配置保留stable ID、别名、隐藏topics、暂停状态、等级/方向、effective_at及版本，在隔离内存SQLite中复用已有ConfigStore领域规则，短事务CAS持久化，不建立每成员文件或调度器。新成员空订阅；显式指定唯一旧配置拥有者才迁移完整原配置/审计/基线，保留旧全局模式。
+- 成员准入、撤权、恢复、私有分析范围由可信本地CLI管理；微信管理员和普通成员均只读写本人订阅。明确命令、上下文、确认、自然语言任务和回执绑定成员，模型调用前后校验资格代次与配置版本；确认不能串用。稳定成员ID+上游消息ID去重，撤权再恢复也不重复执行旧消息；恢复时仅刷新既有启用目标的生效时间，不自动恢复暂停条目或补发停用期间旧闻。
+- 新增MonitorRouter，每轮读取持久运行模式；旧monitor在租约认领事务内再次检查模式，迁移时拒绝未完成旧队列及活跃监控租约，避免旧广播与新成员模式重叠。监控schema已存在时不再通过executescript隐式提交调用者事务。现有部署的schema/DDL指纹恢复保护继续保留，schema3升级不能直接切回schema2旧镜像。
+- 成员检索词按目标取并集共享抓取，文章按来源命名空间、上游身份和内容版本持久化。AI以文章内容/来源、单目标、规范化关注点、组织/私有域、模型/端点/可用revision及提示词/结构版本分组缓存；不同公司不共用一个总利好利空，同需求成员复用。通知阈值由本地判断；每轮最多10次真实新闻模型请求，失败计入、成员模式内部单次尝试，持久轮转防超过10名成员时后排饥饿。文章/缓存/评估15天清理，outbox保留投递幂等证据。
+- 成员评估与通知入队同事务；一人同文多目标合并一条定向消息，各目标分别展示分析。分析或发送失败不会吞掉其他成员通知；分段检查点保留。每段发送前复核运行组织、数据库组织、消息组织、成员代次和当前订阅/关注点/阈值，旧无作用域队列不得恢复广播。修复更换企业配置后旧消息发给另一组织同名UserID的边界。
+- 迁移ID-only seen首次观察时绑定当前文章版本，不重发原内容，后续实质修订可重新分析。新增/恢复订阅按生效时间处理；显式历史补查必须指定成员和唯一目标，并保留真实订阅effective_at作为投递资格，避免临时回溯窗口使已授权补查被误取消。模拟/预览使用临时库，不触碰正式运行数据。
+- 实际执行相关离线命令：`python -m pytest tests/test_subscriptions.py tests/test_config_commands.py -q`最终61通过；成员回调/API/旧端到端46通过；CLI/原监控相关47通过；新增成员端到端验证三成员共享一次AI、发送前收紧阈值取消、仅失败成员重试。最终组织隔离与稳定消息去重联测82通过，补查/CLI/成员端到端相关35通过。均使用`.venv/Scripts/python.exe`（Python3.12.12），autouse网络阻断生效，无真实模型或投递。
+- 完整离线回归过程：较早实现345 passed/1 skipped；严格预算与修订后360 passed/1 skipped（117.16s）。补查后全套出现1项新端到端fixture失败，原因为模拟投递时刻早于扫描实际入队时刻；将fixture时间推进至入队后再验证重试，定向6项通过。**最终冻结全部代码后实际执行 `.venv/Scripts/python.exe -m pytest -q`：367 passed, 1 skipped in 120.62s**；唯一跳过仍为Windows环境的真实Linux软链接用例，非新增失败。随后`.venv/Scripts/python.exe -m compileall -q stock_watch`和`git diff --check`通过（仅既有PROGRESS行尾转换提示）。实际执行`python -m stock_watch --help`、`members --help`与`demo`成功；demo仅使用临时库/模拟抓取、模型及收件人。
+- 未验证/未执行：未连接生产服务器、未调用真实新闻/DeepSeek/企业微信，未新增真实成员/来源/收件人，未修改线上MONITOR_ENABLED、原三只股票或关注配置，未导入旧系统seen、提交/推送或部署；本轮镜像构建、Linux CI及生产资源/管理回执时延尚未实测。生产仍是此前已授权版本，本轮不把本地schema3及离线测试称为生产迁移/新成员真实收件；上线前须明确旧配置唯一拥有者，按既有备份与队列保护执行迁移和实际账号验收。
+
+## 独立订阅生产发布与原拥有者迁移（2026-10-22，发布进行中）
+
+- 操作者明确要求部署生产，指定原配置拥有者为当前唯一用户MaTianye。生产实际UserID与输入只存在大小写差异；已按casefold核实唯一身份，并沿用已部署的精确UserID拼写，不改变既有企业微信收件范围。原拥有者注册为admin，微信配置操作仍限定本人。
+- 只读生产预检：app/worker均f104a7b…且healthy、UID10001/只读根文件系统，原授权MONITOR_ENABLED=true；schema2/config_version1、3只股票、themes0、seen68、基线3、outbox仅sent1、待投递/意图任务0，integrity_check=ok。配置指纹仍为`d492eb01aaa3f17359f037f590aa926242b51792a8b01e192b4cf945aa97828b`。环境仅做一致性指纹核对，未打印凭证或敏感消息。
+- 发布前发现兼容问题：成员撤权产生cancelled终态通知，旧发布脚本将其误认为待发送。已最小修正queue_check并新增真实shell替身回归；完整离线`.venv/Scripts/python.exe -m pytest -q`为**368 passed, 1 skipped in126.72s**（既有Windows/Linux软链接差异跳过）。经可信管理SSH及deploy.lock备份原固定脚本，原子安装修正版，sha256为`39d5917b247e59bc05eb04f93222f74901ca6f6ee46485fa4155f02af7c2af0f`；未扩大受限GitHub入口权限或允许队列豁免。
+- 生产发布顺序：正常GitHub测试/双架构镜像/受限入口部署schema3，保留原监控开关及全局兼容模式；完成后停app/worker并确认空队列，另做SQLite online backup，在禁网容器内同事务准入唯一原拥有者并迁移配置/审计/seen/基线；然后直接重启同一schema3镜像。最终运行SHA、镜像、心跳、成员隔离及备份结果待发布完成后补记，不以本计划声称已完成迁移。

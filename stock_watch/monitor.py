@@ -79,6 +79,15 @@ def write_transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
 def ensure_monitor_schema(conn: sqlite3.Connection) -> None:
     """Create phase-1 tables if the central initializer has not done so yet."""
 
+    required = {"monitor_runs", "monitor_state", "monitor_leases", "seen_articles", "outbox"}
+    present = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if required <= present:
+        run_columns = {row[1] for row in conn.execute("PRAGMA table_info(monitor_runs)")}
+        outbox_columns = {row[1] for row in conn.execute("PRAGMA table_info(outbox)")}
+        if "error" in run_columns and "lease_owner" in outbox_columns:
+            return
+    if conn.in_transaction:
+        raise RuntimeError("initialize monitor schema before starting a transaction")
     conn.executescript(
         """
         CREATE TABLE IF NOT EXISTS monitor_runs (
@@ -401,6 +410,17 @@ class MonitorService:
         with open_connection(self.db) as conn:
             ensure_monitor_schema(conn)
             with write_transaction(conn):
+                # Check inside the same write transaction as the lease. A
+                # worker that selected legacy mode before a member migration
+                # must not start a broadcast scan after that migration commits.
+                if not getattr(self, "independent_subscriptions", False):
+                    has_meta = conn.execute(
+                        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='app_meta'"
+                    ).fetchone()
+                    if has_meta and conn.execute(
+                        "SELECT 1 FROM app_meta WHERE key='independent_subscriptions'"
+                    ).fetchone():
+                        return False
                 existing = conn.execute(
                     "SELECT status, lease_until FROM monitor_runs WHERE slot=?", (slot,)
                 ).fetchone()

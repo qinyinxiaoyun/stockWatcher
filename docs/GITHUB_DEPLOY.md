@@ -58,6 +58,8 @@ schema 变化（包括已提交 DDL 但版本号尚未更新）或无法证实�
 
 同日发布恢复修复已随f104a7b…部署：Linux CI278项通过，五项真实Docker隔离故障恢复演练通过；正式版本/心跳/发布指针一致，正式库和升级前备份完整性通过，业务表指纹不变。故障演练未触碰生产项目，自动监控仍关闭；名单、不导入旧seen、非交易时段切换和暂缓系统升级均按操作者决定保留。
 
+后续明确启用授权：操作者确认旧触发器停用且无执行中任务，要求现在开启新监控；已于2026-10-22北京时间14:39仅将共享环境MONITOR_ENABLED改为true，并在同一f104a7b…镜像重建app/worker。自然首轮及下一时槽成功、3个目标基线完成，名单/config_version不变。此为运行配置切换，不是新代码发布；后续部署须保留该已授权开关，不恢复为首次部署默认值。详见进度文档。
+
 本地离线测试、Compose 解析、GitHub 实际构建、首次镜像部署和回退演练分别记录在 `docs/PROGRESS.md`。文件已编写不代表服务器已部署。首次服务器部署与真实企业微信/DeepSeek/新闻源联调仍分别验收，自动监控须由操作者明确启用。
 
 官方依据：[GitHub 镜像构建与发布](https://docs.github.com/en/actions/tutorials/publish-packages/publish-docker-images)、[GHCR](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry)。

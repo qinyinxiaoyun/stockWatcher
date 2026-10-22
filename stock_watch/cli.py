@@ -31,10 +31,27 @@ def parser():
     result.add_argument("--database", help="覆盖数据库路径")
     sub = result.add_subparsers(dest="command", required=True)
     sub.add_parser("init-db", help="幂等初始化数据库与原始三家公司")
-    sub.add_parser("config", help="查看当前监控快照")
+    config = sub.add_parser("config", help="查看监控快照；独立订阅模式需指定成员")
+    config.add_argument("--member", help="指定已准入成员UserID")
     command = sub.add_parser("command", help="本地执行明确管理指令")
     command.add_argument("text")
     command.add_argument("--user", default="local-operator")
+    command.add_argument("--member", help="本地可信操作指定成员自己的订阅")
+    members = sub.add_parser("members", help="本地可信管理：成员准入、撤权及独立订阅迁移")
+    member_actions = members.add_subparsers(dest="member_action", required=True)
+    member_actions.add_parser("list", help="查看已准入成员")
+    member_add = member_actions.add_parser("add", help="准入成员；默认空订阅")
+    member_add.add_argument("user")
+    member_add.add_argument("--role", choices=("subscriber", "admin"), default="subscriber")
+    member_revoke = member_actions.add_parser("revoke", help="撤销成员资格及待投递任务")
+    member_revoke.add_argument("user")
+    member_owner = member_actions.add_parser("assign-legacy-owner", help="显式指定唯一原拥有者并切换独立订阅")
+    member_owner.add_argument("user")
+    member_analysis = member_actions.add_parser("analysis", help="选择该成员分析结果的隔离范围")
+    member_analysis.add_argument("user")
+    privacy = member_analysis.add_mutually_exclusive_group(required=True)
+    privacy.add_argument("--private", action="store_true", help="分析结果按成员隔离")
+    privacy.add_argument("--shared", action="store_true", help="相同公开关注需求在本组织内复用")
     monitor = sub.add_parser("monitor", help="手工执行一轮；实际远程访问需显式 --real")
     monitor.add_argument("--dry-run", action="store_true", help="复制数据库到临时库，不改正式seen/任务，不投递")
     source = monitor.add_mutually_exclusive_group()
@@ -42,6 +59,7 @@ def parser():
     source.add_argument("--real", action="store_true", help="真实新闻+模型，消耗额度；不直接投递，写入outbox")
     backfill = sub.add_parser("backfill", help="单目标历史补查，最多10条；默认隔离模拟预览")
     backfill.add_argument("--target", required=True, help="唯一的启用目标代码/方向名")
+    backfill.add_argument("--member", help="独立订阅补查必须指定的成员UserID")
     backfill.add_argument("--hours", type=int, choices=range(1, 25), default=24)
     backfill.add_argument("--dry-run", action="store_true")
     backfill.add_argument("--real", action="store_true", help="真实抓取分析；不带dry-run时写正式outbox")
@@ -106,15 +124,16 @@ class FakeSender:
 
 def monitor_service(settings, *, fake=False, db=None):
     from .analyzer import DeepSeekAnalyzer, DeepSeekHTTPTransport, FakeAnalyzer
-    from .monitor import MonitorService
+    from .monitor_router import MonitorRouter
     from .news import EastmoneyNewsClient
     fetcher = FakeFetcher() if fake else EastmoneyNewsClient(timeout=settings.news_timeout_seconds)
     analyzer = FakeAnalyzer() if fake else DeepSeekAnalyzer(
         DeepSeekHTTPTransport(settings.deepseek_api_key, settings.deepseek_url),
         model=settings.deepseek_model, timeout=settings.model_timeout_seconds,
     )
-    return MonitorService(db or settings.database_path, fetcher, analyzer,
-                          environ={"MONITOR_ENABLED": str(settings.monitor_enabled).lower()})
+    return MonitorRouter(db or settings.database_path, fetcher, analyzer,
+                         corp_id=settings.wecom_corp_id,
+                         environ={"MONITOR_ENABLED": str(settings.monitor_enabled).lower()})
 
 
 def run_worker(settings, *, once=False, fake=False):
@@ -189,7 +208,8 @@ def main(argv=None):
             return demo(settings)
         # dry-run opens source read-only via backup, never creates formal data.
         scan_command = args.command in {"monitor", "backfill"}
-        backfill_options = {"backfill_hours": args.hours, "backfill_target": args.target} if args.command == "backfill" else {}
+        backfill_options = {"backfill_hours": args.hours, "backfill_target": args.target,
+                            "member_user": args.member} if args.command == "backfill" else {}
         if args.command == "backfill" and args.real and not args.dry_run and args.ack_max_notifications != 10:
             print("真实补查可能新增最多10条通知；请先预览，再显式添加 --ack-max-notifications 10。", file=sys.stderr)
             return 1
@@ -238,15 +258,58 @@ def main(argv=None):
                         "monitor_enabled": settings.monitor_enabled})
             elif args.command == "config":
                 from .config import ConfigStore
-                output(ConfigStore(conn).snapshot().to_dict())
+                from .subscriptions import MemberConfigStore, MemberRegistry
+                enabled = conn.execute("SELECT 1 FROM app_meta WHERE key='independent_subscriptions'").fetchone()
+                registry = MemberRegistry(conn, settings.wecom_corp_id) if (args.member or enabled) else None
+                if args.member:
+                    member = registry.get(args.member)
+                    if member is None or not member.active:
+                        raise ConfigError("该成员未准入或已停用。")
+                    store = MemberConfigStore(conn, member.id)
+                elif registry is not None and registry.is_enabled():
+                    raise ConfigError("独立订阅模式请使用 config --member 指定成员。")
+                else:
+                    store = ConfigStore(conn)
+                output(store.snapshot().to_dict())
             elif args.command == "command":
                 from .commands import CommandService
                 from .config import ConfigStore
-                result = CommandService(ConfigStore(conn)).execute(args.text, user_id=args.user)
+                from .subscriptions import MemberConfigStore, MemberRegistry
+                enabled = conn.execute("SELECT 1 FROM app_meta WHERE key='independent_subscriptions'").fetchone()
+                registry = MemberRegistry(conn, settings.wecom_corp_id) if (args.member or enabled) else None
+                user = args.member or args.user
+                if args.member or registry is not None and registry.is_enabled():
+                    member = registry.get(user)
+                    if member is None or not member.active:
+                        raise ConfigError("该成员未准入或已停用。")
+                    store = MemberConfigStore(conn, member.id)
+                else:
+                    store = ConfigStore(conn)
+                result = CommandService(store).execute(args.text, user_id=user)
                 print(result.text)
+            elif args.command == "members":
+                from .subscriptions import MemberRegistry
+                registry = MemberRegistry(conn, settings.wecom_corp_id)
+                if args.member_action == "list":
+                    output({"independent_subscriptions": registry.is_enabled(),
+                            "members": [member.to_dict() for member in registry.all()]})
+                elif args.member_action == "add":
+                    output(registry.add(args.user, role=args.role).to_dict())
+                elif args.member_action == "revoke":
+                    output(registry.revoke(args.user).to_dict())
+                elif args.member_action == "assign-legacy-owner":
+                    output(registry.assign_legacy_owner(args.user).to_dict())
+                elif args.member_action == "analysis":
+                    output(registry.set_analysis_private(args.user, args.private).to_dict())
             elif args.command == "status":
+                member_mode = conn.execute("SELECT value FROM app_meta WHERE key='independent_subscriptions'").fetchone()
                 output({"build_sha": settings.build_sha, "schema_version": SCHEMA_VERSION,
                         "monitor_enabled": settings.monitor_enabled,
+                        "independent_subscriptions": member_mode is not None,
+                        "subscription_organization_matches": member_mode is None or member_mode[0] == settings.wecom_corp_id,
+                        "subscription_members": [dict(row) for row in conn.execute(
+                            "SELECT active,count(*) AS count FROM members WHERE corp_id=? GROUP BY active",
+                            (settings.wecom_corp_id,))],
                         "outbox": [dict(row) for row in conn.execute("SELECT status,count(*) AS count FROM outbox GROUP BY status")],
                         "management_tasks": [dict(row) for row in conn.execute("SELECT status,count(*) AS count FROM async_tasks GROUP BY status")],
                         "runs": [dict(row) for row in conn.execute("SELECT * FROM monitor_runs ORDER BY started_at DESC LIMIT 10")]})

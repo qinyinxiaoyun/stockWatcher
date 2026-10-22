@@ -230,6 +230,17 @@ def test_invalid_inputs_fail_before_docker(deployment, image, sha):
     assert not (base / "shared" / "image-release.env").exists()
 
 
+def test_cancelled_member_notification_does_not_block_deployment(deployment):
+    base, run = deployment
+    seed_database(base, status="cancelled")
+    previous_release(base)
+    result, calls = run()
+    assert result.returncode == 0, result.stderr
+    assert worker_starts(calls)
+    with sqlite3.connect(base / "shared" / "data" / "stock-watch.db") as db:
+        assert db.execute("SELECT status FROM outbox").fetchone()[0] == "cancelled"
+
+
 @pytest.mark.parametrize("status,task", [("pending", None), ("sending", None), (None, "pending"), (None, "running")])
 def test_existing_real_queue_is_rejected_before_stopping_services_or_backup(deployment, status, task):
     base, run = deployment

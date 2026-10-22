@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 
 class SchemaVersionError(RuntimeError):
@@ -88,6 +88,8 @@ def init_db(conn: sqlite3.Connection) -> None:
         raise SchemaVersionError(
             f"database schema {current} is newer than supported schema {SCHEMA_VERSION}"
         )
+    from .subscription_monitor import SCHEMA_SQL as subscription_schema_sql
+
     conn.executescript(
         """
         BEGIN IMMEDIATE;
@@ -216,6 +218,13 @@ def init_db(conn: sqlite3.Connection) -> None:
             value TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
+        CREATE TABLE IF NOT EXISTS monitor_leases (
+            name TEXT PRIMARY KEY,
+            lease_owner TEXT NOT NULL,
+            lease_until TEXT NOT NULL,
+            run_slot TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS seen_articles (
             article_key TEXT PRIMARY KEY,
             seen_at TEXT NOT NULL
@@ -236,8 +245,64 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS ix_outbox_due
             ON outbox(status, available_at, locked_until);
-        COMMIT;
+        CREATE TABLE IF NOT EXISTS members (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            corp_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin','subscriber')),
+            active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+            generation INTEGER NOT NULL DEFAULT 1 CHECK(generation > 0),
+            analysis_private INTEGER NOT NULL DEFAULT 0 CHECK(analysis_private IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(corp_id,user_id)
+        );
+        CREATE TABLE IF NOT EXISTS member_configs (
+            member_id INTEGER PRIMARY KEY REFERENCES members(id),
+            config_version INTEGER NOT NULL CHECK(config_version >= 0),
+            snapshot_json TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS member_config_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES members(id),
+            actor TEXT NOT NULL,
+            source TEXT NOT NULL,
+            source_message_id TEXT,
+            action TEXT NOT NULL,
+            target_id TEXT,
+            before_json TEXT,
+            after_json TEXT,
+            from_version INTEGER NOT NULL,
+            to_version INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS ix_member_config_audit
+            ON member_config_audit(member_id,to_version,id);
+        CREATE TABLE IF NOT EXISTS member_confirmations (
+            token TEXT PRIMARY KEY,
+            member_id INTEGER NOT NULL REFERENCES members(id),
+            member_generation INTEGER NOT NULL,
+            user_id TEXT NOT NULL,
+            action TEXT NOT NULL,
+            config_version INTEGER NOT NULL,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            consumed_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS ix_member_confirmations
+            ON member_confirmations(member_id,user_id,expires_at);
+        CREATE TABLE IF NOT EXISTS member_registry_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_id INTEGER NOT NULL REFERENCES members(id),
+            actor TEXT NOT NULL,
+            action TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        );
         """
+        + subscription_schema_sql
+        + "\nCOMMIT;"
     )
 
     conn.execute("BEGIN IMMEDIATE")

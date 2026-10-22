@@ -69,7 +69,7 @@ queue_check() {
     "${compose[@]}" run --rm --no-deps -T app python - "${WORKER_QUEUE_APPROVED:-false}" <<'PY'
 import sqlite3, sys
 with sqlite3.connect("file:/data/stock-watch.db?mode=ro", uri=True) as db:
-    deliveries = db.execute("SELECT count(*) FROM outbox WHERE status NOT IN ('sent','dead')").fetchone()[0]
+    deliveries = db.execute("SELECT count(*) FROM outbox WHERE status NOT IN ('sent','dead','cancelled')").fetchone()[0]
     tasks = db.execute("SELECT count(*) FROM async_tasks WHERE status IN ('pending','running')").fetchone()[0]
 if (deliveries or tasks) and sys.argv[1] != "true":
     raise SystemExit(1)

@@ -508,11 +508,8 @@ class Application:
                 agent_id=int(self.settings.wecom_agent_id),
                 outer_xml=body,
             )
-            allowed = {
-                user.casefold() for user in self.settings.wecom_admin_userids if user
-            }
-            if message["from_user"].casefold() not in allowed:
-                raise PermissionError("unauthorized_member")
+            from .callback_service import authorize_callback
+            authorize_callback(self.settings, message["from_user"])
             self._dispatch_callback(message)
             # Empty HTTP 200 asks WeCom not to retry.  Receipts are durable
             # active messages from the outbox, never broadcast passive replies.
