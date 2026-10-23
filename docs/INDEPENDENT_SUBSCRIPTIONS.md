@@ -12,6 +12,8 @@
 
 上述五项首版已实现，以下是2026-10-22的历史发布记录：生产代码0c988da…，操作者指定原拥有者MaTianye，沿用实际UserID `MaTianYe` 注册为唯一成员及admin，迁移原3只股票及配置、68条已处理记录和3个基线，当时配置版本为1。MONITOR_ENABLED=true沿用原授权状态，app/worker及公网健康检查通过；Windows离线368 passed/1 skipped，Linux CI369 passed。schema4质量策略及当前发布、验证状态以[PROGRESS.md](PROGRESS.md)为准，不将这次旧发布记录作为新策略已上线的证据。代码更新不自动新增成员、启用监控或发送测试消息。
 
+2026-10-23已发布schema4质量改进72b7215…，旧报道/评估/已发事实映射已完成，app/worker和公网健康通过，升级前schema3备份完整。MaTianYe仍为唯一成员，个人v2、3股1主题及环境/监控开关均保持原值；没有重放旧通知。Windows538 passed/1 skipped，Linux539 passed。发布在15:05扫描截止后，真实模型用量与推送质量须在正常扫描时段观察。
+
 ## 运维与兼容入口
 
 `init-db`升级至schema4但不改变原有运行模式。schema4保留既有配置、seen、评估、outbox及已接受分段，并从历史报道和通知补建规范身份/提醒证据，不清库、不全量重建首次基线。`members add USERID`仅准入空订阅，`members assign-legacy-owner USERID`才明确原拥有者并启用独立模式；要求组织身份已配置、拥有者先准入且个人配置为空、旧队列和运行中监控已排空。生产迁移先按现有流程备份，升级后不得直接运行低schema版本旧镜像。

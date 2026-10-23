@@ -357,3 +357,14 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 当前已过工作日15:05扫描截止；发布验收不强制补跑、不额外请求新闻/DeepSeek/企业微信。真实成本变化、模型召回率及手机收件质量需下个正常扫描时段观察，≥50%节费仍是目标，旧服务缺usage不能反推实际费用倍数。
 - 最后交叉审查修复：历史已发/已评估只绑定它本身的事实修订，不能误标后来的更正已发；新修订时间未知/冲突不得借用旧稿可信日期，也不覆盖当前可信代表。补齐目标升级为重大时，未接受摘要可安全抽出立即提醒；整批输入超限或预算不容纳时自适应拆小，单项超限可查且不拖住其他任务。
 - 增补用例定稿期间一次完整运行读到超出200字名称限制的中间fixture，结果1 failed/532 passed/1 skipped；修为合法配置后专用流水线28 passed。最终冻结全部业务代码和测试后，实际完整`.venv/Scripts/python.exe -m pytest -q`：**538 passed, 1 skipped in148.08s**。唯一跳过仍为Windows真实Linux软链接测试，交由Linux CI执行；`git diff --cached --check`、`compileall`通过。发布前与origin/main比较0/0、生产无待发送outbox或管理任务，配置与环境指纹均保持原值。
+- 改动提交并推送为`72b72152ff6a777b68e171aa7559e2d2635c27e0`，触发现有发布[run39917582769](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/39917582769)。实际使用任务内`github-ops.py jobs/test-evidence`只读取状态与脱敏汇总；Linux CI完整**539 passed in65.18s**，脚本语法检查通过。此时正在构建双架构镜像，生产验收待下节记录；没有为了验收新增真实新闻/模型/投递请求。
+
+### 2026-10-23 15:30 新闻质量整改生产验收
+
+- 发布run39917582769的test/image/deploy均success，业务SHA为`72b72152ff6a777b68e171aa7559e2d2635c27e0`；生产app/worker实际使用同一不可变镜像`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:2bba91a7ae66b9450b6f514aefae9a1b378e0e2144c2677acb24059a8cd92b31`。镜像真实离线自检通过，容器SQLite3.46.1，仍沿用DELETE journal；没有启用WAL。
+- 实际执行任务内`.venv/Scripts/python.exe tmp/deploy-quality.py verify 72b72152ff6a777b68e171aa7559e2d2635c27e0`：app/worker均healthy、UID10001:10001、只读根文件系统，worker新SHA心跳在07:30:27Z；公网`/health`、`/ready`均code0及同一新SHA。MONITOR_ENABLED=true沿用原授权。
+- 数据库schema3→4、integrity_check=ok；显式init-db历史迁移marker已完成，236个旧key映射到179个规范报道，保留246条来源观察，8组已发送成员事实证据。8条迁移候选为queued且指向原已sent outbox，只作为去重证据；pending候选/outbox/管理任务均0。升级前后outbox均sent18，没有新增投递或重放。当前模型usage0，未人为补跑已结束时槽或发测试消息。
+- 唯一成员MaTianYe仍为admin/generation1，个人配置v2、3只股票/1个主题，完整全局配置及成员表/配置JSON指纹和环境文件哈希与发布前完全相同。没有恢复旧v1配置、扩收件人或重置订阅生效时间。
+- 发布自动生成`shared/data/backups/pre-image-20261023T072858443757Z.db`：schema3、integrity_check=ok，全局及成员配置指纹均与发布前匹配。升级schema4后禁止直接运行schema3旧应用；保留备份，不自动恢复覆盖共享库。
+- 验收边界：已验证离线决策、批量请求结构/usage、迁移/幂等、通知时效/资格/半段恢复与部署健康；未在本轮新增真实DeepSeek/新闻/投递验收调用。真实模型召回、每100候选token及重复率/手机提醒体验仍需下个正常扫描时段观察，不能将Fake回放或0调用空窗当作实测节费。候选历史按成员全量读取的规模优化留待后续数据增长时处理。
+- 15:34重复只读核对：新SHA心跳07:34:27Z，生产PRAGMA journal_mode=delete，app/worker最近10分钟ERROR/CRITICAL/Traceback计数均0；公网健康与配置/环境指纹再次通过，未发送/调用模型。只补文档的后续提交带`[skip ci]`，不重新部署已验收业务镜像。
