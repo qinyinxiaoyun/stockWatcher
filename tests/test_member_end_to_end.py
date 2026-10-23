@@ -9,6 +9,7 @@ from stock_watch.config import ConfigStore
 from stock_watch.db import connect, init_db
 from stock_watch.delivery import DeliveryDispatcher
 from stock_watch.monitor_router import MonitorRouter
+from stock_watch.notifications import flush_notifications
 from stock_watch.settings import Settings
 from stock_watch.subscriptions import MemberRegistry
 
@@ -34,6 +35,7 @@ def test_member_pipeline_reuses_analysis_and_retries_only_failed_recipient(tmp_p
     result = monitor.run_once(force=True, now=scan_time)
     assert result.analyzed == 1 and result.queued == 3
     assert len(fetcher.queries) == 1 and len(analyzer.calls) == 1
+    assert flush_notifications(settings.database_path, scan_time+timedelta(minutes=30)) == 3
     # A rule tightened after analysis must be checked again at actual delivery.
     callback.handle({"message_id": "tighten-bob", "from_user": "bob",
                      "msg_type": "text", "content": "设置推送等级 重大"})
@@ -45,7 +47,7 @@ def test_member_pipeline_reuses_analysis_and_retries_only_failed_recipient(tmp_p
 
         def send_chunk(self, text, to_user=None):
             assert to_user in {"alice", "bob", "carol"}
-            if "AI 自动新闻预警" in text:
+            if "重要经营事实摘要" in text:
                 if to_user == "carol" and not self.failed_carol:
                     self.failed_carol = True
                     raise OSError("offline simulated transient failure")
@@ -53,7 +55,7 @@ def test_member_pipeline_reuses_analysis_and_retries_only_failed_recipient(tmp_p
 
     sender = Sender()
     dispatcher = DeliveryDispatcher(settings, sender)
-    delivery_time = scan_time + timedelta(minutes=1)
+    delivery_time = scan_time + timedelta(minutes=31)
     for _ in range(20):
         if not dispatcher.deliver_one(now=delivery_time):
             break
@@ -63,6 +65,6 @@ def test_member_pipeline_reuses_analysis_and_retries_only_failed_recipient(tmp_p
             break
     assert sender.news_recipients == ["alice", "carol"]
     news = {json.loads(row["payload_json"])["touser"]: row["status"]
-            for row in conn.execute("SELECT * FROM outbox WHERE event_key LIKE 'member:%:article:%'")}
+            for row in conn.execute("SELECT * FROM outbox WHERE event_key LIKE 'notification:%'")}
     assert news == {"alice": "sent", "bob": "cancelled", "carol": "sent"}
     conn.close()

@@ -322,6 +322,14 @@ class MonitorRunResult:
     config_version: int = 0
     deduplicated: int = 0
     duration_seconds: float = 0.0
+    analysis_tasks: int = 0
+    analysis_succeeded: int = 0
+    filtered: int = 0
+    expired: int = 0
+    cache_hits: int = 0
+    deferred: int = 0
+    notifications_queued: int = 0
+    member_config_versions: tuple[tuple[int, int], ...] = ()
 
 
 class RunLeaseLost(RuntimeError):
@@ -386,11 +394,13 @@ class MonitorService:
         result = MonitorRunResult(**values)
         log = LOGGER.debug if result.status == "skipped" else LOGGER.info
         log(
-            "monitor_cycle task_id=%s config_version=%d status=%s duration_seconds=%.3f fetched=%d deduplicated=%d analyzed=%d queued=%d error_types=%s",
+            "monitor_cycle task_id=%s config_version=%d status=%s duration_seconds=%.3f fetched=%d deduplicated=%d analyzed=%d queued=%d error_types=%s analysis_tasks=%d analysis_succeeded=%d filtered=%d expired=%d deferred=%d notifications_queued=%d",
             result.slot or self.owner, result.config_version, result.status,
             result.duration_seconds, result.fetched, result.deduplicated,
             result.analyzed, result.queued,
             tuple(error.rsplit(":", 1)[-1].strip() for error in result.errors),
+            result.analysis_tasks, result.analysis_succeeded, result.filtered,
+            result.expired, result.deferred, result.notifications_queued,
             extra={
                 "task_id": result.slot or self.owner,
                 "config_version": result.config_version,

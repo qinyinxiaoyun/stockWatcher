@@ -29,7 +29,7 @@ def members(tmp_path):
 def test_new_members_are_empty_without_enabling_or_mutating_legacy(members):
     conn, registry, a, b = members
     original = ConfigStore(conn).snapshot()
-    assert SCHEMA_VERSION == 3
+    assert SCHEMA_VERSION == 4
     assert not registry.is_enabled()
     assert a.role == "subscriber" and a.active and a.generation == 1
     assert not a.analysis_private

@@ -9,6 +9,7 @@ from stock_watch.analyzer import DeepSeekAnalyzer, FakeAnalyzer
 from stock_watch.db import connect, init_db
 from stock_watch.delivery import DeliveryDispatcher
 from stock_watch.news import NewsArticle
+from stock_watch.notifications import flush_notifications
 from stock_watch.settings import Settings
 from stock_watch.subscriptions import MemberConfigStore, MemberRegistry
 from stock_watch.subscription_monitor import SubscriptionMonitorService, article_version
@@ -50,7 +51,9 @@ def run_service(path, fetcher, analyzer=None, **kwargs):
 
 
 def pending(conn):
-    return [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM outbox ORDER BY id")]
+    # Queued assessments wait for the member's next digest boundary. Inspect the
+    # durable candidate, rather than requiring an immediate phone notification.
+    return [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM notification_candidates ORDER BY id")]
 
 
 def test_shared_query_and_analysis_fan_out_to_both_members(state):
@@ -62,6 +65,12 @@ def test_shared_query_and_analysis_fan_out_to_both_members(state):
     assert {row["member_id"] for row in pending(conn)} == {m.id for m in members}
     assert {row["touser"] for row in pending(conn)} == {"alice", "bob"}
     assert all(len(targets) == 1 for _, targets in analyzer.calls)
+    assert conn.execute("SELECT count(*) FROM outbox").fetchone()[0] == 0
+    assert flush_notifications(path, NOW+timedelta(minutes=29)) == 0
+    assert flush_notifications(path, NOW+timedelta(minutes=30)) == 2
+    digests = [json.loads(row[0]) for row in conn.execute("SELECT payload_json FROM outbox ORDER BY id")]
+    assert {value["touser"] for value in digests} == {"alice", "bob"}
+    assert all(value["event"] == "subscription.digest" and len(value["items"]) == 1 for value in digests)
 
 
 def test_different_focus_and_private_scope_never_share_analysis(state):
@@ -84,9 +93,10 @@ def test_member_failure_does_not_swallow_others_and_restart_uses_pool(state):
     MemberConfigStore(conn, members[0].id).apply_operation(
         {"op": "set_focus", "target": "123456.SH", "focus": "失败组"}, actor="alice")
     class Analyzer(FakeAnalyzer):
+        fail_group = True
         def analyze(self, article, targets):
             targets = tuple(targets)
-            if targets[0].focus == ("失败组",):
+            if self.fail_group and targets[0].focus == ("失败组",):
                 raise TimeoutError("private upstream content")
             return super().analyze(article, targets)
     first = run_service(path, Fetcher(), Analyzer()).run_once(now=NOW, force=True)
@@ -94,7 +104,12 @@ def test_member_failure_does_not_swallow_others_and_restart_uses_pool(state):
     assert pending(conn)[0]["touser"] == "bob"
     # Upstream no longer returns the item; the durable pool and Bob's completed
     # evaluation survive a process restart without replaying Bob's notification.
-    second = run_service(path, Fetcher(keys=()), FakeAnalyzer()).run_once(now=NOW, force=True)
+    recovered_analyzer = Analyzer()
+    recovered_analyzer.fail_group = False
+    cooling = run_service(path, Fetcher(keys=()), recovered_analyzer).run_once(now=NOW, force=True)
+    assert cooling.analyzed == cooling.queued == 0
+    assert len(pending(conn)) == 1
+    second = run_service(path, Fetcher(keys=()), recovered_analyzer).run_once(now=NOW+timedelta(minutes=5), force=True)
     assert second.queued == 1
     assert len(pending(conn)) == 2
     assert {p["touser"] for p in pending(conn)} == {"alice", "bob"}
@@ -134,19 +149,22 @@ def test_same_member_multiple_targets_merge_one_notification(state):
     assert all(len(targets) == 1 for _, targets in analyzer.calls)
 
 
-def test_source_namespaces_and_content_revisions_are_independent(state):
+def test_media_names_and_query_excerpts_do_not_create_new_articles(state):
     path, conn, _, _ = state
     first = run_service(path, Fetcher(sources=("source-a", "source-b"))).run_once(now=NOW, force=True)
-    assert first.queued == 4
-    assert conn.execute("SELECT count(*) FROM subscription_articles").fetchone()[0] == 2
+    assert first.queued == 2 and first.analyzed == 1
+    assert conn.execute("SELECT count(*) FROM subscription_articles").fetchone()[0] == 1
     one = NewsArticle("id", "标题", "https://example.invalid", NOW, source="one")
-    assert article_version(one)[0] != article_version(replace(one, source="two"))[0]
-    assert article_version(one)[0] != article_version(replace(one, summary="新增材料"))[0]
+    assert article_version(one)[0] == article_version(replace(one, source="two"))[0]
+    assert article_version(one)[0] == article_version(replace(one, summary="新增查询摘录"))[0]
+    assert article_version(one)[0] != article_version(replace(one, summary="更正：订单金额为11亿元"))[0]
+    assert article_version(one)[0] != article_version(replace(one, summary="公司宣布撤销订单"))[0]
 
 
 def test_revocation_before_delivery_cancels_without_broadcast(state, tmp_path):
     path, conn, registry, _ = state
     run_service(path, Fetcher()).run_once(now=NOW, force=True)
+    assert flush_notifications(path, NOW+timedelta(minutes=30)) == 2
     registry.revoke("alice")
     calls = []
     class Sender:
@@ -154,8 +172,8 @@ def test_revocation_before_delivery_cancels_without_broadcast(state, tmp_path):
             calls.append(to_user)
     settings = Settings(data_dir=tmp_path, database_path=path, wecom_corp_id="test-corp", wecom_to_users=("broadcast",))
     dispatcher = DeliveryDispatcher(settings, Sender())
-    assert dispatcher.deliver_one(now=NOW+timedelta(minutes=1))
-    assert dispatcher.deliver_one(now=NOW+timedelta(minutes=1))
+    assert dispatcher.deliver_one(now=NOW+timedelta(minutes=31))
+    assert dispatcher.deliver_one(now=NOW+timedelta(minutes=31))
     assert calls == ["bob"]
     assert [r[0] for r in conn.execute("SELECT status FROM outbox ORDER BY id")] == ["cancelled", "sent"]
 
@@ -219,12 +237,13 @@ def test_member_mode_runtime_mismatch_cannot_fall_back_to_push_delivery(state, t
 def test_paused_subscription_cancels_prepared_notification(state, tmp_path):
     path, conn, _, members = state
     run_service(path, Fetcher()).run_once(now=NOW, force=True)
+    assert flush_notifications(path, NOW+timedelta(minutes=30)) == 2
     MemberConfigStore(conn, members[0].id).apply_operation({"op": "pause", "target": "123456.SH"}, actor="alice")
     class Sender:
         def send_chunk(self, *args, **kwargs):
             pytest.fail("cancelled subscription was delivered")
     settings = Settings(data_dir=tmp_path, database_path=path, wecom_corp_id="test-corp", wecom_to_users=("broadcast",))
-    assert DeliveryDispatcher(settings, Sender()).deliver_one(now=NOW+timedelta(minutes=1))
+    assert DeliveryDispatcher(settings, Sender()).deliver_one(now=NOW+timedelta(minutes=31))
     assert conn.execute("SELECT status FROM outbox ORDER BY id LIMIT 1").fetchone()[0] == "cancelled"
 
 
@@ -235,7 +254,8 @@ def test_total_analysis_budget_and_member_fairness(state):
     result = run_service(path, Fetcher(keys=tuple(f"news-{i}" for i in range(12)))).run_once(now=NOW, force=True)
     assert result.analyzed == 10
     assert {p["touser"] for p in pending(conn)} == {"alice", "bob"}
-    assert result.status == "partial"
+    assert result.deferred > 0
+    assert conn.execute("SELECT count(*) FROM member_evaluations").fetchone()[0] == 10
 
 
 def test_dry_run_writes_no_pool_cache_or_notifications_and_disabled_by_default(state):
@@ -243,7 +263,7 @@ def test_dry_run_writes_no_pool_cache_or_notifications_and_disabled_by_default(s
     service = run_service(path, Fetcher())
     assert service.run_once(now=NOW).reason == "monitor_disabled"
     assert service.run_once(now=NOW, force=True, dry_run=True).queued == 2
-    for table in ("subscription_articles", "subscription_analysis", "member_evaluations", "outbox", "monitor_runs"):
+    for table in ("subscription_articles", "subscription_analysis", "member_evaluations", "notification_candidates", "outbox", "monitor_runs"):
         assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
 
 
@@ -318,8 +338,9 @@ def test_corrupt_cached_analysis_is_repaired_without_losing_fanout(state, invali
     path, conn, _, _ = state
     run_service(path, Fetcher()).run_once(now=NOW, force=True)
     # Emulate an interrupted fan-out after the analysis commit.
-    conn.execute("DELETE FROM member_evaluations")
-    conn.execute("DELETE FROM outbox")
+    # These records form one atomic evaluation transaction in schema 4.
+    for table in ("member_evaluations", "notification_candidates", "quality_member_articles", "quality_member_events", "outbox"):
+        conn.execute(f"DELETE FROM {table}")
     conn.execute("UPDATE subscription_analysis SET result_json=?", (invalid,))
     result = run_service(path, Fetcher(keys=())).run_once(now=NOW, force=True)
     assert result.status == "succeeded" and result.analyzed == 1 and result.queued == 2
@@ -370,23 +391,31 @@ def test_privacy_changed_during_model_call_cannot_store_old_public_result(state)
                 registry.set_analysis_private("alice", True)
                 self.changed = True
             return super().analyze(article, targets)
-    result = run_service(path, Fetcher(), PrivacyChanger()).run_once(now=NOW, force=True)
-    # Bob is still entitled to his own public analysis, so Alice's stale result
-    # cannot be the one committed to the shared cache.
-    assert result.analyzed == 2 and result.queued == 1
-    assert pending(conn)[0]["touser"] == "bob"
+    analyzer = PrivacyChanger()
+    result = run_service(path, Fetcher(), analyzer).run_once(now=NOW, force=True)
+    # The stale public result cannot enter the shared cache, and the same public
+    # key is attempted only once in this round. Bob recovers in a fresh round.
+    assert result.analyzed == 1 and result.queued == 0
+    assert pending(conn) == []
+    assert conn.execute("SELECT count(*) FROM subscription_analysis").fetchone()[0] == 0
+    recovered = run_service(path, Fetcher(keys=()), analyzer).run_once(now=NOW+timedelta(minutes=5), force=True)
+    assert recovered.analyzed == recovered.queued == 2
+    assert {payload["touser"] for payload in pending(conn)} == {"alice", "bob"}
+    assert conn.execute("SELECT count(*) FROM subscription_analysis").fetchone()[0] == 2
+    assert len(analyzer.calls) == 3
 
 
 def test_threshold_change_after_queue_cancels_old_analysis_before_sending(state, tmp_path):
     path, conn, _, members = state
     run_service(path, Fetcher()).run_once(now=NOW, force=True)
+    assert flush_notifications(path, NOW+timedelta(minutes=30)) == 2
     MemberConfigStore(conn, members[0].id).apply_operation(
         {"op": "set_push_levels", "levels": ["重大"]}, actor="alice")
     class Sender:
         def send_chunk(self, *args, **kwargs):
             pytest.fail("current member threshold should cancel the old alert")
     settings = Settings(data_dir=tmp_path, database_path=path, wecom_corp_id="test-corp", wecom_to_users=("broadcast",))
-    assert DeliveryDispatcher(settings, Sender()).deliver_one(now=NOW+timedelta(minutes=1))
+    assert DeliveryDispatcher(settings, Sender()).deliver_one(now=NOW+timedelta(minutes=31))
     assert conn.execute("SELECT status FROM outbox ORDER BY id LIMIT 1").fetchone()[0] == "cancelled"
 
 
@@ -407,6 +436,7 @@ def test_member_mode_cannot_retry_legacy_broadcast(state, tmp_path):
 def test_retention_bounds_pool_cache_evaluations_and_legacy_seen(state):
     path, conn, _, members = state
     run_service(path, Fetcher()).run_once(now=NOW, force=True)
+    assert flush_notifications(path, NOW+timedelta(minutes=30)) == 2
     cutoff = (NOW-timedelta(days=16)).isoformat(timespec="seconds")
     conn.execute("UPDATE subscription_articles SET published_at=?", (cutoff,))
     conn.execute("UPDATE subscription_analysis SET created_at=?", (cutoff,))
@@ -416,9 +446,10 @@ def test_retention_bounds_pool_cache_evaluations_and_legacy_seen(state):
     for table in ("subscription_articles", "subscription_analysis", "member_evaluations", "member_legacy_seen"):
         assert conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0] == 0
     assert len(pending(conn)) == 2  # Outbox idempotency and accepted history persist.
+    assert conn.execute("SELECT count(*) FROM outbox").fetchone()[0] == 2
 
 
-def test_real_analyzer_retry_copy_enforces_ten_external_request_budget(state):
+def test_real_analyzer_retry_copy_enforces_ten_logical_task_budget(state):
     path, conn, _, members = state
     MemberConfigStore(conn, members[1].id).apply_operation(
         {"op": "set_focus", "target": "123456.SH", "focus": "风险"}, actor="bob")
@@ -433,7 +464,8 @@ def test_real_analyzer_retry_copy_enforces_ten_external_request_budget(state):
     assert service.analyzer.model == analyzer.model
     assert service.analyzer.transport is analyzer.transport
     result = service.run_once(now=NOW, force=True)
-    assert result.analyzed == len(requests) == 10
+    assert result.analysis_tasks == 10
+    assert result.analyzed == len(requests) == 2  # Two bounded five-task requests.
     assert result.queued == 0
     assert conn.execute("SELECT count(*) FROM member_evaluations").fetchone()[0] == 0
 

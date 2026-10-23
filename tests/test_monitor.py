@@ -376,7 +376,9 @@ def test_valid_jsonp_accepts_empty_result_and_normalizes_html_without_execution(
     payload = f"callback({json.dumps(raw, ensure_ascii=False)});"
     assert unwrap_jsonp(payload) == raw
     result = EastmoneyNewsClient(transport=lambda url, timeout: payload).fetch_target(TARGET)
-    assert len(result) == 1
+    assert len(result) == 2
+    assert result[1].time_status == "unknown"
+    assert result[1].source_published_at is None
     assert result[0].title == "测试公司 & 新订单"
     assert result[0].summary == "增长"
 

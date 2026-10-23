@@ -133,6 +133,9 @@ def monitor_service(settings, *, fake=False, db=None):
     )
     return MonitorRouter(db or settings.database_path, fetcher, analyzer,
                          corp_id=settings.wecom_corp_id,
+                         budget_limits={"hour_limit": settings.news_hourly_token_budget,
+                                        "day_limit": settings.news_daily_token_budget,
+                                        "major_reserve_fraction": settings.news_major_reserve_fraction},
                          environ={"MONITOR_ENABLED": str(settings.monitor_enabled).lower()})
 
 
@@ -141,6 +144,10 @@ def run_worker(settings, *, once=False, fake=False):
     from .delivery import DeliveryDispatcher
     from .push import WeComClient
     from .worker import run_worker_once
+    if not fake:
+        from .model_usage import recover_reservations
+        recover_reservations(settings.database_path,
+            before=datetime.now(timezone.utc)-timedelta(seconds=max(1200, settings.model_timeout_seconds+60)))
     service = monitor_service(settings, fake=fake) if (fake or settings.monitor_enabled) else None
     callback = CallbackService(settings)
     if fake:
@@ -226,9 +233,11 @@ def main(argv=None):
                 target.close()
                 conn = connect(temp_db)
                 init_db(conn)
+                independent = conn.execute("SELECT 1 FROM app_meta WHERE key='independent_subscriptions'").fetchone() is not None
                 conn.close()
                 service = monitor_service(settings, fake=not args.real, db=temp_db)
-                output({"dry_run": True, "external_model": bool(args.real), "delivery": False,
+                output({"dry_run": True, "external_model": bool(args.real) and not independent, "delivery": False,
+                        "analysis_mode": "cache_preview" if args.real and independent else "real" if args.real else "fake",
                         "notification_limit": 10, **backfill_options,
                         "result": asdict(service.run_once(force=True, dry_run=True, **backfill_options))})
                 return 0
@@ -253,6 +262,8 @@ def main(argv=None):
         try:
             init_db(conn)
             if args.command == "init-db":
+                from .subscription_scan import prepare_history
+                prepare_history(conn, datetime.now(timezone.utc))
                 output({"database": str(settings.database_path.resolve()), "schema_version": SCHEMA_VERSION,
                         "sqlite": sqlite3.sqlite_version, "journal_mode": conn.execute("PRAGMA journal_mode").fetchone()[0],
                         "monitor_enabled": settings.monitor_enabled})
@@ -302,6 +313,7 @@ def main(argv=None):
                 elif args.member_action == "analysis":
                     output(registry.set_analysis_private(args.user, args.private).to_dict())
             elif args.command == "status":
+                from .model_usage import budget_status
                 member_mode = conn.execute("SELECT value FROM app_meta WHERE key='independent_subscriptions'").fetchone()
                 output({"build_sha": settings.build_sha, "schema_version": SCHEMA_VERSION,
                         "monitor_enabled": settings.monitor_enabled,
@@ -312,6 +324,10 @@ def main(argv=None):
                             (settings.wecom_corp_id,))],
                         "outbox": [dict(row) for row in conn.execute("SELECT status,count(*) AS count FROM outbox GROUP BY status")],
                         "management_tasks": [dict(row) for row in conn.execute("SELECT status,count(*) AS count FROM async_tasks GROUP BY status")],
+                        "news_candidates": [dict(row) for row in conn.execute("SELECT status,count(*) AS count FROM notification_candidates GROUP BY status")],
+                        "news_budget": budget_status(conn, hour_limit=settings.news_hourly_token_budget,
+                            day_limit=settings.news_daily_token_budget, major_reserve_fraction=settings.news_major_reserve_fraction),
+                        "model_usage": [dict(row) for row in conn.execute("SELECT category,COUNT(*) AS requests,SUM(total_tokens) AS measured_tokens,SUM(total_tokens IS NULL) AS unknown_attempts,SUM(budget_charge) AS budget_charge FROM model_usage GROUP BY category")],
                         "runs": [dict(row) for row in conn.execute("SELECT * FROM monitor_runs ORDER BY started_at DESC LIMIT 10")]})
             elif args.command == "worker-health":
                 row = conn.execute("SELECT updated_at FROM monitor_state WHERE key='worker:heartbeat'").fetchone()

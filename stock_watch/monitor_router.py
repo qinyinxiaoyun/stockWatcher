@@ -6,9 +6,10 @@ from .monitor import MonitorService
 
 
 class MonitorRouter:
-    def __init__(self, db, fetcher, analyzer, *, corp_id, environ=None):
+    def __init__(self, db, fetcher, analyzer, *, corp_id, environ=None, budget_limits=None):
         self.db, self.fetcher, self.analyzer = db, fetcher, analyzer
         self.corp_id, self.environ = corp_id, environ
+        self.budget_limits = budget_limits
         self.legacy = MonitorService(db, fetcher, analyzer, environ=environ)
         self.member_service = None
 
@@ -41,6 +42,7 @@ class MonitorRouter:
                 self.member_service = SubscriptionMonitorService(
                     self.db, self.fetcher, self.analyzer,
                     corp_id=self.corp_id, environ=self.environ,
+                    budget_limits=self.budget_limits,
                 )
             return self.member_service.run_once(**kwargs)
         if kwargs.get("member_id") is not None:

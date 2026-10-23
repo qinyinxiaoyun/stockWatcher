@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 
 
 class SchemaVersionError(RuntimeError):
@@ -89,6 +89,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             f"database schema {current} is newer than supported schema {SCHEMA_VERSION}"
         )
     from .subscription_monitor import SCHEMA_SQL as subscription_schema_sql
+    from .quality import QUALITY_SCHEMA_SQL
+    from .model_usage import SCHEMA_SQL as model_usage_schema_sql
+    from .notifications import SCHEMA_SQL as notifications_schema_sql
+    from .analysis_jobs import SCHEMA_SQL as analysis_jobs_schema_sql
 
     conn.executescript(
         """
@@ -302,6 +306,10 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
         + subscription_schema_sql
+        + QUALITY_SCHEMA_SQL
+        + model_usage_schema_sql
+        + notifications_schema_sql
+        + analysis_jobs_schema_sql
         + "\nCOMMIT;"
     )
 

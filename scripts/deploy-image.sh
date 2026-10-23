@@ -71,7 +71,10 @@ import sqlite3, sys
 with sqlite3.connect("file:/data/stock-watch.db?mode=ro", uri=True) as db:
     deliveries = db.execute("SELECT count(*) FROM outbox WHERE status NOT IN ('sent','dead','cancelled')").fetchone()[0]
     tasks = db.execute("SELECT count(*) FROM async_tasks WHERE status IN ('pending','running')").fetchone()[0]
-if (deliveries or tasks) and sys.argv[1] != "true":
+    candidates = 0
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='notification_candidates'").fetchone():
+        candidates = db.execute("SELECT count(*) FROM notification_candidates WHERE status='pending'").fetchone()[0]
+if (deliveries or tasks or candidates) and sys.argv[1] != "true":
     raise SystemExit(1)
 PY
 }

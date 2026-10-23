@@ -38,6 +38,14 @@ def run_worker_once(
     # MONITOR_ENABLED gates only automatic scans. Management and durable
     # receipts must continue to work while automatic monitoring is paused.
     management_processed = bool(callback_service.run_one()) if callback_service and not dry_run else False
+    # Candidates can become due while automatic scans are disabled or outside
+    # trading slots. The worker remains the only background composition point.
+    database = getattr(getattr(dispatcher, 'settings', None), 'database_path', None)
+    if database is None:
+        database = getattr(service, 'db', None)
+    if database is not None and not dry_run:
+        from .notifications import flush_notifications
+        flush_notifications(database, now=now)
     delivery_processed = bool(dispatcher.deliver_one(now=now)) if dispatcher and not dry_run else False
     # Re-read wall clock at the scan boundary. A long management/delivery task
     # must not carry a stale 15:04 timestamp across the 15:05 cutoff.

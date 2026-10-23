@@ -141,7 +141,7 @@ def _operation_context(snapshot, operations):
 class CallbackService:
     def __init__(self, settings, *, intent_client=None):
         self.settings = settings
-        self.intent_client = intent_client or DeepSeekIntentClient(settings)
+        self.intent_client = intent_client or DeepSeekIntentClient(settings, usage_db_path=settings.database_path)
 
     def handle(self, message):
         from .commands import CommandService, parse_command

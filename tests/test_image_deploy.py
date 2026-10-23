@@ -241,6 +241,21 @@ def test_cancelled_member_notification_does_not_block_deployment(deployment):
         assert db.execute("SELECT status FROM outbox").fetchone()[0] == "cancelled"
 
 
+def test_durable_news_candidate_requires_queue_approval_before_stop(deployment):
+    base, run = deployment
+    seed_database(base)
+    previous_release(base)
+    with sqlite3.connect(base / "shared" / "data" / "stock-watch.db") as db:
+        db.execute("CREATE TABLE notification_candidates(status TEXT)")
+        db.execute("INSERT INTO notification_candidates VALUES ('pending')")
+    original = container_state(base)
+    result, calls = run()
+    assert result.returncode != 0
+    assert "WORKER_QUEUE_APPROVED=true" in result.stderr
+    assert service_mutations(calls) == []
+    assert container_state(base) == original
+
+
 @pytest.mark.parametrize("status,task", [("pending", None), ("sending", None), (None, "pending"), (None, "running")])
 def test_existing_real_queue_is_rejected_before_stopping_services_or_backup(deployment, status, task):
     base, run = deployment

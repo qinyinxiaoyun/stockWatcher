@@ -14,6 +14,7 @@ import hashlib
 import json
 import re
 import time
+import unicodedata
 from typing import Any, Callable, Iterable, Mapping, Protocol
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -84,6 +85,12 @@ class NewsArticle:
     target_keys: tuple[str, ...] = ()
     raw_id: str | None = None
     legacy_keys: tuple[str, ...] = ()
+    # Unknown/conflicting source dates are retained for audit, never replaced
+    # with retrieval time to make an article appear recent.
+    time_status: str = "trusted"
+    source_published_at: datetime | None = None
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
 
     def with_targets(self, keys: Iterable[str]) -> "NewsArticle":
         merged = tuple(sorted(set(self.target_keys).union(keys)))
@@ -195,8 +202,13 @@ def _first(item: Mapping[str, Any], *names: str) -> Any:
 
 
 def _clean_text(value: Any) -> str:
-    text = unescape(re.sub(r"<[^>]*>", " ", str(value or "")))
-    return " ".join(text.split())
+    # Search highlighting wraps parts of words. Adding spaces for inline tags
+    # turns e.g. 阿里<em>巴巴</em> into a different title and breaks matching.
+    text = re.sub(r"</?(?:em|b|strong|span|font|mark)\b[^>]*>", "", str(value or ""), flags=re.I)
+    text = unicodedata.normalize("NFKC", unescape(re.sub(r"<[^>]*>", " ", text)))
+    text = " ".join(text.replace("\u200b", "").replace("\ufeff", "").split())
+    text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff0-9])", "", text)
+    return re.sub(r"(?<=[0-9])\s+(?=[\u3400-\u9fff])", "", text)
 
 
 def parse_published_at(value: Any) -> datetime:
@@ -246,8 +258,7 @@ def normalize_article(item: Mapping[str, Any], target: NewsTarget) -> NewsArticl
     ).strip()
     raw_id_value = _first(item, "id", "code", "articleId", "ArticleID", "Art_Code")
     raw_id = str(raw_id_value).strip() if raw_id_value not in (None, "") else None
-    published_at = parse_published_at(
-        _first(
+    raw_published_at = _first(
             item,
             "published_at",
             "publishTime",
@@ -256,7 +267,21 @@ def normalize_article(item: Mapping[str, Any], target: NewsTarget) -> NewsArticl
             "time",
             "Art_ShowTime",
         )
-    )
+    try:
+        published_at = parse_published_at(raw_published_at)
+        time_status = "trusted"
+        for field in ("published_at", "publishTime", "showTime", "date", "time", "Art_ShowTime"):
+            if item.get(field) in (None, ""):
+                continue
+            try:
+                alternative = parse_published_at(item[field])
+            except (ValueError, OverflowError, OSError):
+                continue
+            if abs((alternative - published_at).total_seconds()) > 300:
+                time_status = "conflict"
+    except (ValueError, OverflowError, OSError):
+        published_at = datetime(1970, 1, 1, tzinfo=SHANGHAI)
+        time_status = "unknown"
     summary = _clean_text(
         _first(item, "summary", "content", "digest", "description", "Art_Content") or ""
     )
@@ -284,6 +309,8 @@ def normalize_article(item: Mapping[str, Any], target: NewsTarget) -> NewsArticl
         source=source,
         target_keys=(target.key,),
         legacy_keys=legacy_keys,
+        time_status=time_status,
+        source_published_at=published_at if time_status != "unknown" else None,
     )
 
 

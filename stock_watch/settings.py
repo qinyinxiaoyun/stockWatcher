@@ -23,6 +23,26 @@ def _csv(name: str) -> tuple[str, ...]:
     return tuple(part.strip() for part in os.getenv(name, "").split(",") if part.strip())
 
 
+def _budget_int(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, str(default)))
+        if value < 0:
+            raise ValueError()
+        return value
+    except ValueError:
+        raise ValueError(f"{name} must be a non-negative integer") from None
+
+
+def _budget_fraction() -> float:
+    try:
+        value = float(os.getenv("NEWS_MAJOR_RESERVE_FRACTION", "0.2"))
+        if not 0 <= value < 1:
+            raise ValueError()
+        return value
+    except ValueError:
+        raise ValueError("NEWS_MAJOR_RESERVE_FRACTION must be in [0,1)") from None
+
+
 @dataclass(frozen=True)
 class Settings:
     data_dir: Path
@@ -49,6 +69,9 @@ class Settings:
     model_timeout_seconds: float = 90.0
     push_timeout_seconds: float = 12.0
     worker_poll_seconds: float = 2.0
+    news_hourly_token_budget: int = 60_000
+    news_daily_token_budget: int = 300_000
+    news_major_reserve_fraction: float = .2
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -86,6 +109,9 @@ class Settings:
             model_timeout_seconds=float(os.getenv("MODEL_TIMEOUT_SECONDS", "90")),
             push_timeout_seconds=float(os.getenv("PUSH_TIMEOUT_SECONDS", "12")),
             worker_poll_seconds=float(os.getenv("WORKER_POLL_SECONDS", "2")),
+            news_hourly_token_budget=_budget_int("NEWS_HOURLY_TOKEN_BUDGET", 60_000),
+            news_daily_token_budget=_budget_int("NEWS_DAILY_TOKEN_BUDGET", 300_000),
+            news_major_reserve_fraction=_budget_fraction(),
         )
 
     def ensure_data_dir(self) -> None:
