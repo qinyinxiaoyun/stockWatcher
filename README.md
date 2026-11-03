@@ -46,6 +46,8 @@ uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 
 ## 管理与运维
 
+成员订阅和研究基线的只读网页工作台见[网页说明](docs/WEB_PORTAL.md)，复用现有域名，使用独立管理员登录；不会公开成员清单或改变监控、订阅和推送。
+
 本地版本化公司研究、关键假设与监控映射入口见[研究基线](docs/RESEARCH_BASELINE.md)。`research`命令仅读写本地材料，不自动启动采集、模型或推送；研究数据保存在`data/`，与新闻通知热缓存分别留存。
 
 ```powershell

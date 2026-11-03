@@ -182,6 +182,8 @@ class Application:
         self._callback_service = callback_service
         self._callback_lock = threading.Lock()
         self.readiness = readiness or self._default_readiness
+        from .dashboard import Dashboard
+        self.dashboard = Dashboard(settings)
 
     @staticmethod
     def _response(
@@ -567,6 +569,9 @@ class Application:
             return self._push(environ, start_response)
         if path == "/wecom/callback":
             return self._callback(environ, start_response)
+        from .dashboard import handles
+        if handles(path):
+            return self.dashboard(environ, start_response)
         return self._json(start_response, 404, {"code": 1, "error": "not_found"})
 
 

@@ -53,6 +53,10 @@ class Settings:
     log_level: str = "INFO"
 
     push_token: str = field(default="", repr=False)
+    dashboard_username: str = ""
+    dashboard_password: str = field(default="", repr=False)
+    dashboard_session_secret: str = field(default="", repr=False)
+    dashboard_origin: str = "https://stock.janettepa.uk"
     wecom_corp_id: str = ""
     wecom_agent_id: int | None = None
     wecom_secret: str = field(default="", repr=False)
@@ -95,6 +99,10 @@ class Settings:
             timezone=schedule_timezone,
             log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
             push_token=os.getenv("PUSH_TOKEN", "").strip(),
+            dashboard_username=os.getenv("DASHBOARD_USERNAME", "").strip(),
+            dashboard_password=os.getenv("DASHBOARD_PASSWORD", ""),
+            dashboard_session_secret=os.getenv("DASHBOARD_SESSION_SECRET", ""),
+            dashboard_origin=os.getenv("DASHBOARD_ORIGIN", "https://stock.janettepa.uk").strip(),
             wecom_corp_id=os.getenv("WECOM_CORP_ID", "").strip(),
             wecom_agent_id=agent_id,
             wecom_secret=os.getenv("WECOM_SECRET", "").strip(),

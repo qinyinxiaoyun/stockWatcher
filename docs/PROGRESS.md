@@ -511,3 +511,14 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 实际执行`tmp/deploy-current.py import-research f3085e9e113bce25034c3f6fbf6bfbe62f25c2af`：先持原部署锁并生成pre-research-import-*在线备份及完整性检查，再从stdin接收本地六份公开JSON，使用短事务追加导入并导出到`/srv/stock-watch/shared/data/research/reports/`。输入资料没有放入Git/镜像层或混入成员私有背景；此过程未访问新闻/DeepSeek/消息接口，没有写seen或outbox。
 - 实际导入结果6公司/6证券/6基线版本/6研究任务，5基础研究门槛通过/1部分覆盖；重复导入不增版本，预期比较和经过验证的收益预测均未启用。片仔癀保留已核半年报和最新三季报待核状态。导入后再次verify，库完整性、所有配置/环境指纹、健康与心跳均通过；研究资料处于生产持久目录，仍未接入自动研究刷新或实时新闻判断。
 - 更新PLAN、业务事件说明和研究设计/使用文档标记实际发布。后续仅文档提交带[skip ci]，不重新部署已验收业务镜像；剩余研究缺口及真实事件归并/手机收件效果按自然运行观察，不将离线程序测试解释为金融预测有效性。
+
+## 2026-11-03 成员订阅与研究网页实施/发布准备
+
+- 操作者要求让stock.janettepa.uk展示所有用户及关注股票，并能进入股票基线分析状态子页。实际HTTP核对原首页404、health/ready均200且f3085e9…；域名已经承载回调/健康/推送，故在现有WSGI app加首页/登录/股票详情，保留原Nginx、DNS、证书、回调与推送路由，没有迁往新的托管平台。
+- 参考Sites页面/预览规范，按用户指定的既有服务器部署方式实现；三名gpt-6.1-sol子agent分工只读数据、视图及专用会话鉴权。新增dashboard.py/dashboard_auth.py/dashboard_data.py/dashboard_views.py，settings增加4个独立后台配置字段（密码/会话密钥repr隐藏）。app没有调度器或研究采集，没有修改schema5。
+- 总览显示本组织所有成员含停用状态、版本、股票/主题/关键词、方向/等级/关注点和研究覆盖；股票页显示证券币种、四项能力、最新期是否核对、十部分研究/精确指标、假设反证/监控映射、来源与历史。数据使用mode=ro/query_only/短读事务及字段白名单，不读消息/确认/凭证或其他组织。首次访问及所有未认证子页只显示登录，不提前打开资料库；私密响应no-store/noindex，HTML/来源URL转义。
+- 独立管理员登录不复用推送密钥；8小时HMAC会话、HTTPS/HttpOnly/SameSite Strict Cookie、CSRF/固定Origin、密码与用户名轮换撤销、有限失败冷却/有界内存。语义占位/缺配置不允许私密页面。源码及测试不保存真实凭据。
+- 实际相关离线测试69 passed（当时auth后续加固后全量覆盖增加）；最终完整 `.venv/Scripts/python.exe -m pytest -q --tb=short`：**735 passed, 1 skipped in155.20s**。compileall通过。真实生产库无网络影子演练 `.venv/Scripts/python.exe tmp/deploy-current.py rehearse f3085e9e113bce25034c3f6fbf6bfbe62f25c2af`：schema5保持、6公司/5基础门槛通过/1部分、重复幂等、旧配置/成员/seen/outbox指纹不变；没有写正式业务库。
+- 本机loopback预览仅使用demo_admin/demo_member合成身份和公开研究文件；HTTP实际检查总览、兆易和片仔癀详情、登录和CSS均200，链接/表格存在，片仔癀最新期明确待核，不含inline脚本/样式。通过open_in_codex请求展示预览。自动cua浏览器两次初始化均因Windows沙箱helper/受信Node进程失败，未绕用其他浏览器驱动，不能声称视觉/移动端浏览器验收完成；后续按真实HTTPS功能验收记录。
+- 实际任务内 `tmp/portal-ops.py provision` 仅在部署锁下原子追加DASHBOARD_USERNAME/PASSWORD/SESSION_SECRET/ORIGIN，原文件私密备份为shared/.env.before-dashboard-20261103T131254566507Z，原所有非后台参数逐行保持。环境哈希208531db…→897f484f…；root600不变，原回调/推送/DeepSeek和MONITOR_ENABLED未变。网页登录信息仅写本机未跟踪.env.dashboard.local，签名密钥仅在服务器；工具stdout只输出路径/哈希/状态，没有密码/会话值。
+- provisioning后的生产baseline：仍f3085e9…，两位active、原配置/审计指纹cec5fb02…和全局d492eb01…，schema5/完整性ok、6研究版本；pending候选/outbox/管理任务均0。旧容器忽略新增网页配置，待新发布读取；现有worker授权保持true。本轮不强制扫描、试发、清队列或新增成员。
