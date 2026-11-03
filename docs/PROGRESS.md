@@ -522,3 +522,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 本机loopback预览仅使用demo_admin/demo_member合成身份和公开研究文件；HTTP实际检查总览、兆易和片仔癀详情、登录和CSS均200，链接/表格存在，片仔癀最新期明确待核，不含inline脚本/样式。通过open_in_codex请求展示预览。自动cua浏览器两次初始化均因Windows沙箱helper/受信Node进程失败，未绕用其他浏览器驱动，不能声称视觉/移动端浏览器验收完成；后续按真实HTTPS功能验收记录。
 - 实际任务内 `tmp/portal-ops.py provision` 仅在部署锁下原子追加DASHBOARD_USERNAME/PASSWORD/SESSION_SECRET/ORIGIN，原文件私密备份为shared/.env.before-dashboard-20261103T131254566507Z，原所有非后台参数逐行保持。环境哈希208531db…→897f484f…；root600不变，原回调/推送/DeepSeek和MONITOR_ENABLED未变。网页登录信息仅写本机未跟踪.env.dashboard.local，签名密钥仅在服务器；工具stdout只输出路径/哈希/状态，没有密码/会话值。
 - provisioning后的生产baseline：仍f3085e9…，两位active、原配置/审计指纹cec5fb02…和全局d492eb01…，schema5/完整性ok、6研究版本；pending候选/outbox/管理任务均0。旧容器忽略新增网页配置，待新发布读取；现有worker授权保持true。本轮不强制扫描、试发、清队列或新增成员。
+
+### 2026-11-03 21:28 网页生产验收
+
+- 业务提交39b61f2521e88a10a125d3e61bd241979fe05d89经[run41643640789](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/41643640789)完成test/image/deploy，三项success。Linux完整 **736 passed in72.13s**（包含Windows跳过用例）。生产不可变镜像`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:6b9eaf8fcb0b98b5e5f04656979908b47d4579c9433ab24a291c3af15c355e2f`，没有修改Nginx/DNS/原受限部署入口或固定脚本928f1fc1…。
+- 原链路生成shared/data/backups/pre-image-20261103T132545994557Z.db，schema5/integrity=ok；成员注册/配置/审计及全局配置指纹与部署baseline一致。正式库仍schema5、DELETE journal、完整性ok，研究仍6公司/6证券/6版本/6任务，无研究或成员信息重置。
+- 实际 `.venv/Scripts/python.exe tmp/deploy-current.py verify 39b61f2521e88a10a125d3e61bd241979fe05d89`：app/worker均healthy/UID10001:10001/只读根、新SHA心跳13:28:36Z；公网health/ready为200/code0/同SHA，最近10分钟错误计数0。新增网页环境哈希897f484f…与baseline相同，所有原非后台环境参数和两位active成员配置指纹保持原值，MONITOR_ENABLED既有true未变。
+- 实际 `.venv/Scripts/python.exe tmp/portal-ops.py check 39b61f2521e88a10a125d3e61bd241979fe05d89` 通过：CookieJar在内存读取专用登录信息，真实HTTPS首页返回登录且no-store，正确CSRF/Origin登录进入总览；六个实际股票页均200并有研究章节及来源，片仔癀最新期保持待核；POST退出清Cookie，随后直接访问子页只见登录不见研究/成员数据。工具只输出成功布尔与页面数量，不记录密码、Cookie或私密页面正文。
+- 当前pending通知/候选/管理任务均0，outbox仍sent87，模型usage仍275；本轮没有强制扫描、付费模型或实际消息测试。原微信/推送路径保持同一路由并通过离线回归；不将本轮网页HTTP测试称为重新验证手机真实收件。
+- 使用open_in_codex请求展示正式入口https://stock.janettepa.uk/，替换本机合成预览；已停止本任务owned loopback预览进程。实际浏览器视觉/移动适配尚未通过自动浏览器实测，限制已写WEB_PORTAL.md，HTTP与离线功能验收已完成。
+- 初始用户名/密码/入口仅保存在本机被Git忽略的.env.dashboard.local，服务器签名密钥没有复制到本机文件。没有把登录密码发入聊天、日志、提交、URL或研究fixture。后续仅文档提交带[skip ci]保存验收状态，不重新部署业务镜像。
