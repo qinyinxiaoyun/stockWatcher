@@ -368,3 +368,136 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 发布自动生成`shared/data/backups/pre-image-20261023T072858443757Z.db`：schema3、integrity_check=ok，全局及成员配置指纹均与发布前匹配。升级schema4后禁止直接运行schema3旧应用；保留备份，不自动恢复覆盖共享库。
 - 验收边界：已验证离线决策、批量请求结构/usage、迁移/幂等、通知时效/资格/半段恢复与部署健康；未在本轮新增真实DeepSeek/新闻/投递验收调用。真实模型召回、每100候选token及重复率/手机提醒体验仍需下个正常扫描时段观察，不能将Fake回放或0调用空窗当作实测节费。候选历史按成员全量读取的规模优化留待后续数据增长时处理。
 - 15:34重复只读核对：新SHA心跳07:34:27Z，生产PRAGMA journal_mode=delete，app/worker最近10分钟ERROR/CRITICAL/Traceback计数均0；公网健康与配置/环境指纹再次通过，未发送/调用模型。只补文档的后续提交带`[skip ci]`，不重新部署已验收业务镜像。
+
+## 2026-10-30 兆易创新消息偏向只读诊断
+
+- 操作者要求先确定最近四五天兆易创新下跌与利好推送并存的原因，随后明确“先不要修改代码”。本轮提前写入的analyzer/delivery本地改动已全部撤回，`git status --short`确认业务代码和测试文件均无变更；未提交、推送、部署或修改线上配置。仅保存诊断与本节记录。
+- 实际执行`Get-Content`/`rg`审阅news/analyzer/quality/subscription_scan/subscription_monitor/delivery及既有只读工具；通过`.venv/Scripts/python.exe tmp/audit-gigadevice-bias.py`使用既有严格管理SSH，对生产SQLite以mode=ro、query_only读取并汇总，不抓取新闻、不调用模型、不投递消息。生产仍为72b72152/schema4/prompt3，监控保持已有true状态，没有改开关、成员、关注点或生效时间。
+- 脱敏快照`tmp/audit-gigadevice-bias.json`初查北京时间10:16，补核10:18:47，核心计数一致；窗口10月26日至30日上午。兆易配置为both、重大/重要，非只收利好。入库188篇相关文章，检索摘要24～150字、中位115字；当前配置键能关联110个分析任务：利好30、利空2、不确定78。已发送15个报道事件为14利好/1利空，摘要内事件数不等于手机提醒次数；采集、分析与通知使用不同时间和粒度，不能据此计算模型准确率或来源全网覆盖率。
+- 已证实重复强化：10月28日回购类送达5个报道事件；10月30日已送达8个重大利好财报报道事件，反复引用同轮前三季同比增长事实，并非8次独立经营改善。现有保守事件身份仍受不同标题/URL影响；只读证据不能证明所有相关报道完全没有新增细节。
+- 已证实遗漏市场风险视角：10月26日AI算力可持续性担忧/板块抛售报道被模型标普通、利空、非基本面、不推送。10月30日09:30的Q3归母净利润环比下滑/公允价值变动转负报道则被正确标重要/利空并送达。正面财报片段主要单独解释同比、营收/利润，未与负面片段合并；尚无证据证明模型将同段明确利空硬判为利好。
+- 5个实际前置行情过滤样本正负皆有，均为纯交易回顾，未证实本窗口误杀经营利空；离线合成内存探针另复现“出口限制/财务造假/被立案”等词表缺口，属潜在风险，不冒充本次线上根因。72条时间冲突审计仅对应1篇反复扫描，不是72篇被隔离。
+- 外部公开核验：英为财情历史行情与每经10月30日静态报道显示近期为震荡回撤，三季报10月29日盘后披露，不能将它解释为此前四五天下跌的已知原因。逐页核对Q1、半年报、Q3原PDF，确认同比/环比、归母/扣非及投资损益口径不可混用；中国基金报一条快讯的累计归母金额与原报表存在十倍差异，说明需原文核验，不据此推断媒体蓄意报喜。来源：https://cn.investing.com/equities/gigadevice-semiconductor-beijing-historical-data ，https://www.nbd.com.cn/articles/2026-10-30/4630067.html ，https://pdf.dfcfw.com/pdf/H2_AN202610291831176278_1.pdf ，https://www.chnfund.com/article/54bd9326-cc46-181f-c39e-3a24991785bd 。
+- 结论与待验证：目前能证实单检索渠道/短摘要、同事件正反片段分开判断、重复利好强化及市场风险信息不推送。不能证实来源故意报喜不报忧，也不能确定这轮回撤由估值、预期差或资金兑现中的哪项造成；未采集的全网负面覆盖、全文对照召回率、发布前一致预期仍未验证。建议优先评估事件合并与原公告核验、正反证据共同摘要、经营影响与市场风险分开报告，保持不强制正负各半；本轮不实施。
+- 实际完整离线回归`.venv/Scripts/python.exe -m pytest -q`：**538 passed, 1 skipped in137.45s**；跳过仍为Windows真实Linux软链接用例。`git diff --check`通过；仅有PROGRESS记录变更，没有业务代码/测试变更。离线回归不证明模型效果或新闻覆盖率。
+
+### 同日继续：媒体取向与预期定价分析（仅研究）
+
+- 操作者要求跳出单只股票，比较国内财经来源与WSJ等媒体，并分析利好提前定价的处理方式。本轮继续遵守不改代码要求，未修改业务、配置或线上状态；通过web读取论文原始摘要、官方媒体说明和数据定义，未接入新新闻/行情接口。
+- Piotroski/Wong/Zhang（2017）对177万篇企业报道的研究，在同公司/月及同财报事件控制后发现官方与非官方报纸语调差异，支持部分媒体存在结构性乐观倾向；不能外推为所有国内媒体或2026年东方财富与WSJ的总体排名。未找到这两个来源按同事件/时间/体裁匹配的直接对比证据。原论文：https://chicagounbound.uchicago.edu/jle/vol60/iss1/6/ 。
+- Pollach/Hansen（2021）对相同财报事件的公司新闻稿、研报与财经报道比较发现，公司稿/研报偏积极，财经记者在其样本中削弱公司积极语调；提示应区分原创采写、公司转述、研报与聚合，不能只按国别评价。原论文：https://journals.sagepub.com/doi/10.1177/0267323121999524 。WSJ官网明确新闻与评论分开，但自述规范不等于实证无偏：https://www.wsj.com/about-us 。
+- 2021年财经信息整治原文同时涉及谣言、哄抬和恶意唱空等，作为监管环境的原始背景，不直接声称所有负面事实被禁止或量化当前平台的语调：https://www.cac.gov.cn/2021-08/27/c_1631652531513374.htm 。
+- Hand等（2021/2022）支持同时考虑业绩与未来指引相对预期的差异：https://link.springer.com/article/10.1007/s11142-021-09597-6 。LSEG官方数据说明区分业绩预期差、公布前预测变动及公布后未来季度修订：https://lipperalpha.refinitiv.com/2022/11/product-insights-how-to-monitor-analyst-revisions-during-earnings-season/ 。
+- 建议但未实施：按事件关联首次披露与原文、经营影响、公布前同口径预期、价格/估值背景及公布后相对表现；保存预期时间快照，缺数据标未知，分析师共识只作代理，不让模型臆造预期；已提前上涨或公布后下跌均不能单独证明充分定价或某条新闻的因果影响。媒体对比应按同事件去重后检查负面事实遗漏、证据链、时效和更正记录，不用利好标题占比或后续股价涨跌替代可靠性评估。
+- 以上为概念框架和文献证据，未实测跨媒体语料、未实现新评分/去重/预期或估值模型。业务代码未变，沿用本轮上节完整离线回归结果，不重复执行同一套测试。
+
+## 2026-10-30 新成员命令无回复：准入修复
+
+- 操作者反馈新成员已加入企业及应用allowed user，但“帮助”“查看监控”无回复。代码复核与生产只读检查确认：独立订阅模式下，该成员缺少系统准入。应用可见范围不自动同步MemberRegistry；未准入成员会被HTTP入口拒绝，不生成inbox/回执。未取得该成员历史请求到达服务器的日志证据，因此不将此结论写成已观察到其实际请求返回403。
+- 操作者提供精确UserID后，已通过现有可信运维通道为指定单个成员准入，默认subscriber，创建v1空订阅；操作前已备份并核对完整性。短事务内确认原成员记录、个人配置和全局配置保持原值；未重启、部署、更改监控开关或发送测试消息。成员身份参数及详细生产标识不写入本记录。
+- 实际执行`.venv/Scripts/python.exe tmp/diagnose-member-access.py`；执行`tmp/admit-member.py`和`tmp/verify-member-access.py`时均传入操作者指定的单个UserID（此处省略身份参数）。后者以只读连接分别验证app与worker的现有授权判断，均通过。已请求成员重新发送命令；记录时尚无新收件/回执，客户端实际收到回复仍待验收。
+- 在`docs/WECOM_SETUP.md`补充两层权限、准入和重发验收步骤；未改业务代码或测试，保留本轮开始时已有的研究记录。实际Python3.12.12；相关离线`.venv/Scripts/python.exe -m pytest tests/test_subscriptions.py tests/test_member_cli.py tests/test_member_callbacks.py`：**55 passed in3.21s**；完整离线`.venv/Scripts/python.exe -m pytest -q`：**538 passed, 1 skipped in140.34s**。跳过仍为Windows真实Linux软链接用例；测试通过自动fixture禁止外部网络。
+
+### 同日继续：查询成功与帮助输入核对
+
+- 操作者确认“查看监控”正常，但报告帮助收到模型结构错误。实际再次执行`.venv/Scripts/python.exe tmp/verify-member-access.py`（单个成员身份参数省略），只读核对入站字符特征与回执类型：查询命中view、处理完成且回执sent，仅发给本人；与帮助对应的失败输入存在字形误写，未命中固定帮助命令，随后走自然语言路径并返回结构错误。仅比对白名单词及状态，不在本记录保存原始成员消息。
+- 进一步在app与worker的只读连接中，用现有CommandService分别执行固定“帮助”及`help`，均返回help状态且内容等于固定HELP_TEXT，个人版本保持原值；没有触发模型、外部投递或配置修改。已提示重新发送准确命令，真实帮助收件待成员确认。此轮未修改业务代码、测试或线上状态，沿用同一代码此前完整离线538 passed/1 skipped结果；不将拼写更正视为已修复自然语言模型输出质量。
+
+## 2026-11-01 两位成员当前订阅查询
+
+- 按操作者要求，实际执行`.venv/Scripts/python.exe tmp/read-member-subscriptions.py`，通过既有严格SSH，在生产容器内以SQLite mode=ro/query_only/短读事务读取成员注册及各自的MemberConfigStore快照，不读取消息历史或凭证。查询时两位成员分别为4股/1方向与1股/0方向；目标均启用，股票均为双向，推送等级均为重大/重要，无额外股票关注点。详细成员身份和订阅内容仅向操作者展示，不存入本记录。
+- 本轮仅查询和更新记录，未修改业务代码、测试、线上订阅、监控开关或部署；未发起新闻/模型/投递请求。真实收件及新闻覆盖效果不在本次查询验收范围。
+
+## 2026-11-02 “已定价”当前实现核查与设计建议（未实施）
+
+- 操作者要求核对目前“已定价”逻辑并说明股票分析及代码实现方式。沿用此前先分析、不改业务代码的要求；只读审阅当前源码，不访问生产、凭证、新闻/模型/行情业务接口，不推送或部署。开始时已有PROGRESS和WECOM_SETUP改动均保留，后者本轮未修改。
+- 实际执行`git status --short`、`rg -n`及`Get-Content`。当前analyzer提示v3/结构v2，输入仅标题/摘要/来源/披露日期/URL与目标关注点；AnalysisResult、白名单校验、推送规则没有定价状态、预期快照、行情或估值输入。event_type中的pricing为事件类别，不是股价已定价指标；seen、事件去重和2小时新鲜度也不表示市场已吸收信息。现有模型若写出“已定价”，没有独立数据计算或校验支持。
+- 建议分开保存四类证据：事实已公开程度、相对公告前预期的差异、事件前后相对行情、当前估值隐含的经营要求。不将“没涨/先涨过”转换为priced_in布尔值或价格消化百分比；共识只是预期代理，来源过期/覆盖不足/口径不符均返回未知。
+- 事件先按公司/市场、公告编号或报告期建立稳定身份，新增实质事实建立版本。每一事实版本的首次可信公开时间作为本次t0；转载沿用原时点。最终财报的新细节与此前预告属于同事件族但不机械共用预告前的旧预期基准。
+- 所需快照字段包括as_of、available_at、ingested_at、source/evidence ID、财务期间、单位币种、归母/扣非或GAAP/调整口径、预测人数/分歧/日期，以及价格所属交易所、交易日历、基准和公司行为口径。公告前预期和事后修订分开，结果只使用截止时点已可得的证据；事后行情仅进入后续观察，不倒填原判断。
+- 建议新增pricing_context（数据适配/时间快照）和pricing_assessment（Python纯函数计算/枚举与证据校验）模块；模型提取受约束事实和解释，不能自由决定已消化比例。事实分析缓存与动态市场评估缓存分离，后者纳入事件版本、市场/预期快照、as_of、规则版本及估值假设摘要；不能仅沿用目前15天新闻缓存。
+- 复评需独立worker入口：目前已评估成员/文章/目标会被跳过，单改缓存键不自动重算。市场快照更新不制造新事件、不清理已发证据、不延长提醒期限，也不默认产生新推送；数据缺失不得阻断已有重大经营风险提醒。采集及远程请求继续在写事务外，由唯一worker调度，测试继续全离线。
+- 量化上先计算同口径实际值减公告前共识，亏损或接近零时不硬算百分比，指标方向与指引分别解释。进阶才在明确假设网格下做反向估值/事件两端情景；若展示(P−V_base)/(V_full−V_base)，仅称条件模型情景位置，非客观已定价比例或成功概率，分母退化/超界不截断伪装为0至100%。
+- 公开一手核验通过web读取：Hand等财报预期差研究 https://link.springer.com/article/10.1007/s11142-021-09597-6 ；FactSet历史时点共识方法 https://insight.factset.com/resources/at-a-glance-factset-estimates-point-in-time-consensus?hs_amp=true ；Damodaran反向隐含增长讲义 https://pages.stern.nyu.edu/~adamodar/pdfiles/eqnotes/dcfveg.pdf 。未取得或购买具体股票的历史共识/行情数据，未拟合定价模型或验证预测准确率。
+- 实际完整离线`.venv/Scripts/python.exe -m pytest -q`：**538 passed, 1 skipped in140.06s**，跳过仍为Windows真实Linux软链接用例。未新增业务代码/测试；该结果仅验证现有基线，不表示上述定价设计已经实现或通过效果检验。
+
+## 2026-11-02 今日成员投递条数只读查询
+
+- 按操作者要求，实际执行`.venv/Scripts/python.exe tmp/count-today-deliveries.py`，通过既有严格SSH，在生产SQLite使用mode=ro/query_only/短读事务，仅查询投递元数据，不读取新闻正文、模型解释、回执正文或凭证。窗口为北京时间当日00:00至17:43查询时点，按sent状态及sent_at归日，新闻与指令回执分别统计；accepted_chunks为成功接受的消息段，不用摘要items数量或计划分段数替代。
+- 两位成员的新闻通知分别为11次/4次，对应15条/4条企业微信接受的消息段；前者4次各分2段。指令回执分别0条/1条，消息段合计15条/5条。逐行累加与SQL分组结果一致，共16条成功投递记录、20个已接受消息段；未归属记录、收件作用域不一致及非sent的已接受分段均为0。详细成员身份不写入本记录；接口接受不等同于客户端已读，系统不保存逐段接受时间，不能据此精确重建跨日发送时刻。
+- 本轮仅查询及更新记录，未修改业务代码、测试、订阅、监控开关或部署；未触发新闻/模型/消息投递请求。该结果为截至查询时点的部分日统计。
+
+## 2026-11-02 基本面与新闻驱动的收益预测结构设计（未实施）
+
+- 操作者提出以预测关注股票股价变动为目标，要求说明程序结构、需要改变的方面和困难。本轮仅研究与设计，继续遵守此前不改业务代码要求；保留既有PROGRESS/WECOM_SETUP改动，没有访问生产、修改运行配置或触发真实新闻/模型/投递。
+- 实际只读执行`rg --files`、`Get-Content`、`rg -n`、`git status --short`，核对worker、分析任务、订阅、ARCHITECTURE、FUTURE_ROADMAP及15天保留/5分钟扫描/半小时普通通知边界。新增`docs/FUNDAMENTAL_PREDICTION_DESIGN.md`，明确当前是文章级经营分类，目标结构应是公司基本面/预期状态与事实事件版本、固定时点收益预测及结果验证。
+- 设计分列经营影响、相对事前预期增量、指定窗口绝对及相对收益预测；内部研究预测不冒充市场共识。建议首版5交易日主窗口、1/20日辅助，先财报/指引，再扩其他事件；不是已验证最优参数。来源证据、基本面、内部预测、共识与行情均版本化，研究历史不随15天热缓存删除。
+- 预测时间使用系统实际可用判断时点，通知时延另记；公告后、系统分析前已发生涨幅不算预测命中。已有5分钟扫描/别名15分钟补查/半小时普通摘要不直接承诺公告瞬间优势。独立worker持久任务做研究刷新、事件更新、复评及结果采集，不新增Web调度器/cron；保留成员隔离、预算、短事务、outbox/分段恢复及已发去重。
+- 规划离线比较行情/行业基线、基本面、再加入新闻/预期差后的样本外增量，并进行实时影子验证。重大事件事前定义、同事件/重叠窗口不混入训练测试两边、保存弃权与全部预测；模型概率需经校准，LLM自报confidence不算预测概率。未建立新模型或验证方向/幅度准确率。
+- 外部一手资料通过web读取：Hand等财报预期差研究、FactSet PIT官方说明、CFA Institute回测与模型验证资料、Glasserman/Lin关于LLM历史回测偏差的工作论文，链接在设计文档内。困难包括可靠历史时点数据、市场预期不可直接观察、行业模板维护、样本稀疏/过拟合、延迟和市场环境变化；未采购数据、扩大权限或纳入自动交易。
+- `git diff --check`通过；仅文档变更，没有业务代码/测试变更。沿用本聊天同日相同业务代码完整离线回归**538 passed, 1 skipped in140.06s**，未因仅设计文档重复运行；该基线不代表预测设计已实现或具有金融效果。
+
+## 2026-11-03 新增关注时的个股/方向研究底座（设计补充）
+
+- 操作者询问商业模式、竞争优势之外还应建立哪些分析。继续仅分析设计，不改业务代码、订阅或运行状态。只读核对已有设计与git状态，并在`FUNDAMENTAL_PREDICTION_DESIGN.md`的公司状态部分补充新增关注研究要求；保留已有PROGRESS/WECOM_SETUP改动。
+- 个股补充十部分：商业模式、行业/价值链/周期、竞争优势证据、盈利驱动、财务现金与负债质量、治理与资本配置、内部情景/外部预期、估值隐含要求、风险/反证/证伪条件、催化与跟踪计划。初始产出为版本化研究基线、关键假设表及事件到经营变量的监控映射，事实/推断/预测/未知须区分。
+- 方向另补边界、终端需求与利润池、产业链受益/承压映射、技术替代与商业化阶段、供需/库存/资本开支/政策执行及代表对象；概念关联不等于利润暴露，研究代表名单不自动新增成员订阅。基本研究可用与收益预测可用分别标记，不因基础未齐删除订阅或用模型补造数据。
+- 通过web读取CFA Institute《Company Analysis: Past and Present》《Industry and Competitive Analysis》公开说明与Damodaran增长价值驱动资料，支持业务/财务/竞争/投资与现金流综合研究；未对具体股票或方向完成研究，未抓取新的企业数据或调用业务接口。来源：https://www.cfainstitute.org/insights/professional-learning/refresher-readings/2026/company-analysis-past-and-present ，https://www.cfainstitute.org/insights/professional-learning/refresher-readings/2026/industry-and-competitive-analysis ，https://pages.stern.nyu.edu/~adamodar/New_Home_Page/littlebook/growthvaluedrivers.htm 。
+- 本轮仅文档补充，无业务代码或测试变更；沿用此前相同业务代码完整离线538 passed/1 skipped基线，不将文档设计视为已实现或完成预测验收。
+
+### 同日继续：新闻差异更新流程与重复提醒修复状态
+
+- 操作者询问研究框架下的筛选/已有信息更新操作，并确认重复推送是否仍未解决。本轮仍不改业务代码，仅在`FUNDAMENTAL_PREDICTION_DESIGN.md`补充“事实差异→研究状态→通知资格”的独立决策流程和分类型更新策略；保留所有已有工作区文档改动，不提交、推送或部署。
+- 实际执行`git status --short`、`git log -5 --format`、`rg -n`及`Get-Content`审阅quality、subscription_scan、notifications、delivery与已有诊断；HEAD仍e8734bf文档提交，关键业务代码最后变更72b7215（10月23日），本轮无业务修改。`event_identity`仍依赖主体/类型/报道披露日/完整规范标题；新候选默认article身份，跨标题同一业务事件未根治；现有目标分析合并和摘要限频不等于正反事实综合。
+- 只读合成内存探针复现同回购/同财报换表述会产生不同事件；同标题摘要新增环比下降、但无明确更正证据时revision_key不变，存在漏重评风险。探针说明规则缺口，不冒充生产最近三日已发生的重复率或遗漏量。
+- 经既有StrictHostKeyChecking管理SSH，以docker exec只读取得worker版本/schema和四模块标准化LF的SHA256；北京时间2026-11-03 10:18:15，生产BUILD_SHA仍72b72152ff6a777b68e171aa7559e2d2635c27e0/schema4，quality/notifications/subscription_scan/subscription_monitor均与本地当前文件一致，没有新修复悄然上线。未查询最近三日文章、写库或请求新闻/模型/消息投递。10月30日的回购5个报道事件、财报8个重大利好事件仍只作为当时证据，不称为今日统计。
+- 状态结论：报道级、相同确切事件键/成员候选及成功分段检查点保护已存在；不同标题/跨日的同一业务事实重复提醒尚未完成修复；发送成功但结果不明或落盘前中断的网络窗口仍不保证绝对一次。不能把测试通过称为事件语义去重已经解决。
+- 设计要求追加证据及事实版本、冻结旧预期、只更新受影响驱动/预测，冲突待核实不覆盖确定值；重复补来源不通知，实质新指标/更正/确认才按成员上次已通知状态评估增量。已接受分段后冻结原文，必要更正另发增量；不清seen、不改订阅生效、不用转载续期。
+- 实际完整离线`.venv/Scripts/python.exe -m pytest -q`：**538 passed, 1 skipped in140.14s**（既有Windows真实Linux软链接用例跳过）。本轮仅文档变更；测试验证现有规则的回归基线，不证明上述尚未实现的改进有效。
+
+## 2026-11-03 业务事件归并、事实差异和成员已通知记录修复
+
+- 操作者明确要求按方案实施这三部分。本轮本地修改代码及离线回放，未访问生产、凭证或真实新闻/模型/消息接口，未部署、推送提交、更改成员订阅/监控开关或触发真实投递。普通沙箱启动失败，文件读取与离线测试使用获准的沙箱外命令通道；未扩大服务器权限。
+- 新增`events.py`的有限显式业务锚归并、稳定证券身份、事实版本/来源链/更正与当前指针；接入quality和scan。报告期、公告/合同/订单/回购计划标识可跨标题/跨日复用；无可靠锚继续保守确切处理，主题不伪装成已证明公司事件。原始版本保留，未知/冲突改文不能污染可信canonical绑定。
+- 事实比较分列期间、币种单位、归母/扣非/扣非归母口径、绝对值/同比/环比、指引与实际、数值/完整区间及实施状态。新增指标重新评估；截短摘录不抹更正；矛盾不覆盖确定值；传闻/观点/预测及否认语气不写为已实施。晚发现的旧更正只归档，不能回滚current；可信首次公开时间只可收紧，观点或转载不续期。原始fact JSON/版本差异保留，独立时间索引与状态指针可收敛。
+- 新增`notification_acceptances`，仅真实接口返回接受后随outbox检查点/最终状态在同一短事务落账；候选、已评估及研究最新状态不再冒充已通知。组织/成员/事件/实质变化幂等，完整事实子集及多条保留候选的A+B组合转载防重；已接受任意分段后冻结原文，digest未全部接受不谎称未覆盖条目完整送达。更正按成员实际接受值展示before/after，首次提醒明确区分原披露值。
+- 提示升级v4；仅对有证明身份的材料附加程序整理的事实/变化上下文，要求按增量重要性判断。旧重大指标不能让新增普通细节自动变成重大通知。上下文不改源文章归档，不作为外部可执行意图；保留独立目标/关注点/隐私/模型版本缓存与预算边界。
+- 升级使用独立`business_report_revisions_v1`和`business_event_receipts_v1`组织标记。真实旧v4哈希、已有quality_history_v1、基线/已评估/过滤/过期决策会映射到同一旧正文的新键，不借最新代表把旧决策迁到新指标。历史sent/部分接受才导入接受证据；旧pending/sending仅在候选侧附事件元数据，原outbox JSON不动，发送前恢复严格同成员/原文修订的元数据防重，实际接受后才记账。既有真实检查点时间不因迁移覆盖；历史partial无精确时点时导入时间只能视为证据观察时间，不用于投递时延分析。
+- 新增`tests/test_event_facts.py`、`test_notification_ledger.py`、`test_business_event_pipeline.py`、`test_event_upgrade.py`，并修正跨目标合成独立事件fixture（不能复制另一事件的event_links）。新增`docs/BUSINESS_EVENTS.md`并同步架构说明。开始时已有PROGRESS/WECOM_SETUP和研究设计文档变更均保留；过程中出现的research/research_cli、db/cli及其schema断言并行修改不由本轮覆盖或提交。
+
+### 实际执行与结果
+
+- `git status --short --branch`、`rg --files`、`rg -n`、`Get-Content`：核对方案和扫描/投递/迁移调用点；确认原先事件身份依赖标题、候选默认article身份，以及入队即写quality_member*的混淆。后者保留兼容评估证据，实际防重使用接受账本。
+- `.venv/Scripts/python.exe -m pytest tests/test_business_event_pipeline.py tests/test_event_upgrade.py tests/test_quality_migration.py -q --tb=short`：**27 passed in4.22s**，含旧pending不冒充已通知、正文保持、接受后强事件防重。
+- `.venv/Scripts/python.exe -m pytest tests/test_notification_ledger.py tests/test_business_event_pipeline.py tests/test_event_upgrade.py tests/test_event_facts.py tests/test_quality_migration.py -q --tb=short`：中间稳定版**106 passed in7.39s**；后续增加旧格式发送前检查及组合口径负例。
+- `.venv/Scripts/python.exe -m pytest tests/test_event_facts.py tests/test_notification_ledger.py -q --tb=short`：**80 passed in3.17s**，包含最终扣非归母口径分离。
+- 完整回归初轮定位并修复迁移历史source_published_at为None的两例；一次与协作文件更新重叠的回归产生7个旧fixture定义失败，文件稳定后专项均通过。随后的完整`.venv/Scripts/python.exe -m pytest -q --tb=short`：**665 passed, 1 skipped in148.54s**。
+- 最终完整`.venv/Scripts/python.exe -m pytest -q --tb=short`：**666 passed, 1 skipped in149.68s**。跳过项为既有Windows真实Linux软链接用例，不伪称Linux生产迁移/效果验收通过。该完整结果覆盖当前共享工作区，包括保留的并行研究模块变更；本轮不将其归为自身实施范围。
+- `.venv/Scripts/python.exe -m compileall -q stock_watch`、`git diff --check`：通过；PROGRESS既有CRLF仅有Git换行提示，无空白错误。
+
+### 剩余验收边界
+
+- 有限模板不等于已解决全部跨语言/无标识语义归并，不能用合成测试声称实际线上重复率归零。缺乏可靠业务锚时保守回退；完整基本面、市场预期与收益模型不是本轮实现内容。
+- 本地旧v4数据库fixture升级、通知失败/部分接受/隔离/版本恢复均有离线回放；生产库副本、真实成员收件及上线后重复/遗漏效果未验收。本轮没有操作生产，不能把旧聊天中的部署证据当成本次修复已上线。
+- 接口已接受但本地落盘前中断、网络结果不明的窗口仍不保证绝对一次；已接受不等于已读。没有清空seen、修改订阅生效时间或为转载续期。
+
+## 2026-11-03 本地研究基线代码与当前关注公司初始归档
+
+- 操作者明确要求“先进行本地修改：按照方案实现研究基线代码，并建立已关注股票的研究基线”。本轮落实阶段A的研究归档、关键假设与监控映射；不部署、提交或推送，不接入收益预测/新采集调度或真实模型投递。保留开始时已有PROGRESS/WECOM_SETUP及研究设计改动；工作区并行出现的业务事件/通知账本修复不回退、不冒充本研究模块实施内容。
+- 只读审阅AGENTS、设计与既有代码后，以原有StrictHostKeyChecking管理SSH/SQLite mode=ro/query_only核对当前启用证券并集；仅输出证券代码/名称/核对时间，未复制成员身份/私有关注或消息。得到301308.SZ、600183.SH、600436.SH、603986.SH、688981.SH、9988.HK，写入被Git忽略的data/research/watchlist.json；未修改任何线上状态或请求线上新闻/DeepSeek/微信。
+- 新增research.py、research_cli.py及合成测试。schema5追加研究公司/证券、准备任务、不可覆盖基线和复核请求；保存十部分研究、来源时间/位置/币种口径、精确数值、核心假设/反证和事件到指标的映射。公共研究不复制成员背景，支持双上市证券独立币种、无历史占位公司的受控归属、同文件幂等、历史截止与实际建立时间双重约束。迟到旧基线不覆盖当前或清除needs_update，重复导入不能抹复核请求，新闻热数据清理不删除研究历史。
+- 事实/推断/假设/未知分开；程序核对四项核心有据事实、最新期财报与同期间指标、支持假设和映射。估值/共识缺失不阻断基本面起点，但expectation_comparison和validated_prediction始终false，拒绝导入未经验证的能力true。无来源事实、任意执行字段、未来资料、无时区日期、NaN/Infinity及浮点财务值均拒绝；整数/精确十进制文本保留期间/币种/单位/会计口径，不执行模型生成代码。
+- gpt-6.1-sol研究agent核对公司/交易所/巨潮正式报告并建立六份输入JSON，原始来源定位、事实与条件解释分别留存。兆易2026Q3、江波龙/生益2026Q3及半年报、SMIC2026Q2 HKEX报告、阿里2026六月季度官方报告均有核对；片仔癀只核到2026Q3官方目录，SSE原PDF反复不可达且巨潮公告页timeout，补入正式2026H1原件的业务与多期财务，明确最新期未对齐，不用第三方转载冒充核验。root另外通过web打开江波龙三季报及片仔癀半年报交叉检查；巨潮兆易链接root单次timeout，保留研究agent成功核对和URL而不虚报root重取成功。
+- 六份基线均含十部分、至少两条假设及三条监控映射。五家通过基础研究证据门槛；片仔癀partial/latest_financial_period_not_reconciled。当前市场价、历史共识、完整债期等缺项仍为unknown，不生成目标价/上涨概率/“已定价比例”。材料截止保留研究采集阶段时点，实际本地建立为2026-11-03T04:34:41Z；不得在早于created_at的历史查询中冒称已形成判断。
+- 本地数据写入前，以SQLite online backup建立data/backups/pre-research-20261103T043249Z.db并核integrity=ok。当时本地库schema2，随后仅本地升级5。实际执行 `.venv/Scripts/python.exe -m stock_watch research prepare --watchlist data/research/watchlist.json`、`research import data/research/baselines`、`research export --output data/research/reports`；六个占位任务原子归属为正式公司，最终6个版本/6家公司，5 usable/1 partial；原16个业务表（app_meta仅排除schema_version元数据）内容指纹全部不变，旧配置/seen/outbox未变化。生产库没有升级。
+- 可阅读索引data/research/reports/index.md及六份Markdown/JSON，输入data/research/baselines/和验收data/research/acceptance.json均在持久data目录且不进Git。导出使用安全文件名/Markdown和HTML转义；片仔癀索引明确“三季报待核，已核历史指标见报告”，避免把检查目标期当已核期间。README与RESEARCH_BASELINE.md记录CLI入口、合同/能力/保留边界，研究设计状态仅更新本地研究阶段。
+- 实际研究专用 `.venv/Scripts/python.exe -m pytest -q tests/test_research.py tests/test_research_cli.py tests/test_research_migration.py`：**41 passed in0.45s**；覆盖schema4→5配置/投递保留、历史时点、旧回填、事务回滚、准备→正式归属、复核、输入/导出安全、公开订阅并集不复制私有背景、40天新闻清理后研究仍存。最终完整 `.venv/Scripts/python.exe -m pytest -q --tb=short`：**676 passed, 1 skipped in148.29s**，包含共享工作区其他已存在改动，不将这些测试归为本研究模块独有成果；跳过仍为Windows真实Linux软链接用例。compileall和git diff --check通过。
+- 实际再次逐份append相同文件核对ID和版本：仍为6版本，和只读证券清单完全一致；SQLite integrity=ok，本地MONITOR_ENABLED=false，收益预测false。后续待核事项：片仔癀Q3原件、各公司更多期财务和独立反证、行情/事前预期数据及后续研究更新接入。已有研究不会自动接入新新闻提示或触发推送，新增关注使用显式research prepare，尚未启用worker研究刷新。
+
+## 2026-11-03 最新版本发布准备
+
+- 操作者授权“将最新版本部署到环境”，发布范围包含当前已完成的业务事件/事实差异/实际接受账本及研究基线代码，研究数据单独进入持久目录。沿用现有组织、成员、订阅和监控授权，不启用新研究采集调度/预测模型，不做额外新闻/模型/试发请求。
+- 本地git与origin/main起点均e8734bf；完整离线 `.venv/Scripts/python.exe -m pytest -q --tb=short` 再次 **676 passed, 1 skipped in165.06s**，compileall和diff --check通过。两名gpt-6.1-sol子agent只读审阅事件升级/通知及研究导入，未发现确认阻断；内存库实导6资料、5基础门槛通过/1部分覆盖、两预测能力false、重导仍6版本。
+- 新任务内tmp/deploy-current.py替代只支持唯一成员/schema4的旧验收工具，输出只含计数/哈希/版本与状态。实际baseline只读核对：生产72b7215…/schema4，两位active成员、个人版本均3，app/worker健康，原环境哈希208531db…、固定部署脚本928f1fc1…，pending outbox/管理任务/候选均0，journal=delete，完整性ok。成员注册/配置/审计与全局配置分别保存匿名指纹供发布后核对，不在记录保存成员消息或凭证。
+- 实际执行 `.venv/Scripts/python.exe tmp/deploy-current.py rehearse 72b72152ff6a777b68e171aa7559e2d2635c27e0`：服务器SQLite在线影子备份留在shared/data/release-checks，当前不可变旧镜像挂载新源码，在--network none/只读根/UID10001/降权能力下执行init_db+prepare_history及6份研究导入，schema4→5、integrity、配置/成员/seen/outbox原状态和正文指纹均保持，重复导入不增版本，导出成功。未下载生产库或把它变成fixture，未停止/写入正式业务库。
+- 演练工具先后修正审计表名称、宿主Python路径API兼容及最小权限目录可读性，失败仅发生在读取或影子目录/容器，正式数据未修改；最终结果ok/schema5/6公司/5基础可用/1部分覆盖/idempotent/preserved。正式发布仍经过原队列保护、停机备份、初始化及健康/版本心跳链路；不设置WORKER_QUEUE_APPROVED，不清队列，不改.env或受限SSH入口。

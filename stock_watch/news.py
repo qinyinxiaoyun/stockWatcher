@@ -91,6 +91,9 @@ class NewsArticle:
     source_published_at: datetime | None = None
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
+    # Derived by the local event layer for analysis only; never source identity
+    # or a replacement for the archived raw article.
+    fact_context: Mapping[str, Any] | None = None
 
     def with_targets(self, keys: Iterable[str]) -> "NewsArticle":
         merged = tuple(sorted(set(self.target_keys).union(keys)))

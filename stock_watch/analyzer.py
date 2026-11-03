@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from .news import NewsArticle, NewsTarget
 from .model_usage import estimate_tokens, usage_metadata
 
-ANALYSIS_PROMPT_VERSION = "3"
+ANALYSIS_PROMPT_VERSION = "4"
 ANALYSIS_SCHEMA_VERSION = "2"
 
 
@@ -239,6 +239,8 @@ def build_analysis_prompt(article: NewsArticle, targets: Iterable[NewsTarget]) -
         "published_at": article.published_at.isoformat(),
         "url": article.url[:1000],
     }
+    if article.fact_context:
+        article_payload['fact_context'] = article.fact_context
     schema = {
         "level": "重大|重要|普通",
         "impact": "利好|利空|不确定",
@@ -260,6 +262,9 @@ def build_analysis_prompt(article: NewsArticle, targets: Iterable[NewsTarget]) -
         "不能仅因标题含卖出或下跌就排除重大风险。\n"
         "重要性定义：重大=可能明显改变利润预期、经营风险或估值；"
         "重要=对供需、订单、价格或政策有实际影响；普通=普通观点、重复报道或低相关信息。\n"
+        "若提供fact_context，分别核对已有事实与本次变化；只按新增指标、更正、实施进展或重要确认的增量判断。"
+        "旧重大事实不能让每条补充细节自动成为重大提醒；没有重要增量时should_notify=false。"
+        "结构化事实仍是待核验的来源材料，不代表独立核实或已建立收益预测。\n"
         "关注点是分析重点，不是排除其他重大风险的筛选条件；重要性必须针对所给目标判断。"
         "在reason中说明新闻材料支持的事实及影响路径，在followup中明确缺失证据；"
         "未涉及某关注点时如实说明，不得编造事实或将一家公司的利好原样用于其他公司。\n"
@@ -304,6 +309,8 @@ def build_batch_prompt(tasks) -> str:
                         'article':{'title':article.title[:500], 'summary':article.summary[:4000],
                                    'source':article.source[:100], 'published_at':article.published_at.isoformat(),
                                    'url':article.url[:1000]}})
+        if article.fact_context:
+            payload[-1]['article']['fact_context'] = article.fact_context
     prompt = (prefix + '\n本次为独立任务批处理。每项单独判断，禁止跨任务复用影响或关注点。'
             '最终只返回JSON {"results":[{"task_id":"原样复制任务ID","analysis":{上述分析字段}}]}。'
             '每个task_id必须且只能出现一次；不相关也必须返回该ID和should_notify=false。\n'

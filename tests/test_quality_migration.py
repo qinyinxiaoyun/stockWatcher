@@ -13,7 +13,7 @@ import pytest
 
 from stock_watch import analysis_jobs, model_usage, notifications, quality
 from stock_watch.analyzer import FakeAnalyzer
-from stock_watch.db import connect, init_db
+from stock_watch.db import SCHEMA_VERSION, connect, init_db
 from stock_watch.monitor import write_transaction
 from stock_watch.news import NewsArticle, NewsTarget
 from stock_watch.quality import canonical_identity, event_identity, revision_key
@@ -145,7 +145,7 @@ def migrate(state, corp=CORP):
 def test_upgrade_preserves_configs_raw_history_and_maps_format_variants(legacy):
     state, conn = legacy, legacy.conn
     migrate(state)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert tuple(tuple(row) for row in conn.execute("SELECT * FROM member_configs ORDER BY member_id")) == state.config_rows
     assert conn.execute("SELECT article_key FROM seen_articles").fetchone()[0] == "synthetic-legacy-seen"
     mapped = dict(conn.execute("SELECT * FROM quality_article_key_map"))
@@ -280,7 +280,7 @@ def test_init_db_cli_upgrades_history_before_any_scheduled_worker(legacy, monkey
     monkeypatch.setattr(SubscriptionMonitorService, "run_once", no_scan)
     assert main(["--database", str(state.path), "init-db"]) == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["schema_version"] == 4 and output["monitor_enabled"] is False
+    assert output["schema_version"] == SCHEMA_VERSION and output["monitor_enabled"] is False
     assert conn.execute("SELECT count(*) FROM quality_article_key_map").fetchone()[0] == 2
     assert {row[0] for row in conn.execute("SELECT corp_id FROM notification_candidates")} == {CORP}
     assert conn.execute("SELECT count(*) FROM app_meta WHERE key LIKE 'quality_history_v1:%'").fetchone()[0] == 1

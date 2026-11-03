@@ -9,6 +9,8 @@ from datetime import datetime, timedelta, timezone
 from .db import connect
 from .monitor import OutboxStore, _utc, _iso, write_transaction
 from .push import split_text
+from .notifications import (record_delivery_acceptance, should_notify_event, _event_links,
+                            receipt_event_links)
 
 
 def render_payload(payload):
@@ -65,6 +67,7 @@ def _source_times(payload):
     fact = payload.get('new_fact') or payload.get('fact_change')
     if fact:
         lines.append('新增事实：' + _brief(fact, 180))
+    lines.extend(_fact_changes(payload))
     for item in payload.get('target_analyses', ()):
         analysis = item.get('analysis', {})
         event_at = analysis.get('event_date') or analysis.get('event_at')
@@ -73,6 +76,51 @@ def _source_times(payload):
             lines.append('事实日期：' + str(event_at)[:10])
         if fact and '新增事实：' + _brief(fact, 180) not in lines:
             lines.append('新增事实：' + _brief(fact, 180))
+    return lines
+
+
+def _fact_changes(payload):
+    """Render validated fact values, not a free-form model claim of novelty."""
+    metric_names = {'revenue': '营业收入', 'net_profit': '净利润', 'gross_margin': '毛利率',
+                    'operating_cash_flow': '经营现金流', 'buyback_amount': '回购金额',
+                    'order_amount': '订单金额', 'acquisition_amount': '收购金额',
+                    'capacity': '产能', 'ownership': '持股比例', 'lifecycle': '实施状态'}
+    units = {'CNY': '元', 'USD': '美元', 'HKD': '港元', 'state': ''}
+    states = {'planned': '计划', 'implemented': '已实施', 'completed': '已完成', 'cancelled': '已取消'}
+    bases = {'attributable': '归母', 'nonrecurring_excluded': '扣非',
+             'nonrecurring_excluded_attributable': '扣非归母'}
+    relations = {'yoy': '同比', 'qoq': '环比', 'forecast_absolute': '指引',
+                 'forecast_yoy': '同比指引', 'forecast_qoq': '环比指引'}
+    lines = []
+    if payload.get('previous_event_versions'):
+        lines.append('同一业务事件的后续更新，保留此前提醒记录。')
+    for link in _event_links(payload):
+        for change in link.get('member_fact_changes', link.get('fact_changes', ())):
+            after, before = change.get('after') or {}, change.get('before')
+            if not after or after.get('stale'):
+                continue
+            kind = change.get('kind')
+            if kind in {'opinion', 'rumor', 'additional_evidence'}:
+                continue
+            metric = metric_names.get(after.get('metric'), after.get('metric') or after.get('key') or '指标')
+            label = ' '.join(str(value) for value in (after.get('period'), bases.get(after.get('basis'), ''),
+                            metric, relations.get(after.get('relation'), '')) if value)
+            def value(fact):
+                raw = str(fact.get('value', '待核实'))
+                return _brief(states.get(raw, raw) + units.get(fact.get('unit'), fact.get('unit') or ''), 100)
+            if kind == 'conflict' or after.get('disputed'):
+                text = f'争议待核实：{label}，'
+                text += f'此前通知 {value(before)}；本次来源 {value(after)}，尚未替代确定值。' if before else f'本次来源 {value(after)}，尚未确认为经营事实。'
+            elif before is not None and before.get('fact_id') != after.get('fact_id'):
+                action = {'correction': '事实更正', 'progress': '实质进展', 'confirmation': '官方确认'}.get(kind, '事实更新')
+                text = f'{action}（同一事件）：{label}，此前通知 {value(before)} → 本次 {value(after)}'
+            elif change.get('source_before') and kind in {'correction', 'progress', 'confirmation'}:
+                action = {'correction': '事实更正', 'progress': '实质进展', 'confirmation': '官方确认'}[kind]
+                text = f'{action}（同一事件）：{label}，原披露 {value(change["source_before"])} → 本次 {value(after)}'
+            else:
+                text = f'本次事实：{label} {value(after)}'
+            if text not in lines:
+                lines.append(text)
     return lines
 
 
@@ -116,7 +164,7 @@ class DeliveryDispatcher:
         except (KeyError, ValueError, TypeError):
             return False
 
-    def _prepare_payload(self, conn, payload, current):
+    def _prepare_payload(self, conn, payload, current, *, outbox_id=None):
         """Prune unsent invalid constituents; freeze content after acceptance."""
         accepted = int(payload.get('accepted_chunks', 0))
         event = payload.get('event')
@@ -130,7 +178,7 @@ class DeliveryDispatcher:
                 if any(item.get(key) != payload.get(key) for key in
                        ('corp_id', 'member_id', 'member_generation', 'touser')):
                     return None
-                prepared = self._prepare_news(conn, dict(item), current, frozen=bool(accepted))
+                prepared = self._prepare_news(conn, dict(item), current, frozen=bool(accepted), outbox_id=outbox_id)
                 if prepared is None:
                     if accepted:
                         return None
@@ -140,7 +188,7 @@ class DeliveryDispatcher:
                 return None
             result = dict(payload, items=valid)
         elif event in {'subscription.news', 'news.analysis'}:
-            result = self._prepare_news(conn, dict(payload), current, frozen=bool(accepted))
+            result = self._prepare_news(conn, dict(payload), current, frozen=bool(accepted), outbox_id=outbox_id)
             if result is None:
                 return None
         else:
@@ -149,13 +197,28 @@ class DeliveryDispatcher:
             result.pop('delivery_chunks', None)
         return result
 
-    def _prepare_news(self, conn, payload, current, *, frozen):
+    def _prepare_news(self, conn, payload, current, *, frozen, outbox_id=None):
         if not self._quality_valid(payload, current):
             return None
         if payload.get('event') != 'subscription.news':
             return payload
         if self._member_recipient(conn, dict(payload, event='subscription.digest')) is None:
             return None
+        if not frozen:
+            restored = outbox_id is not None and not payload.get('event_links')
+            links = receipt_event_links(conn, payload, outbox_id) if restored else _event_links(payload)
+            remaining = [link for link in links if should_notify_event(
+                conn, payload['corp_id'], payload['member_id'], link)]
+            if links and not remaining:
+                return None
+            if len(remaining) != len(links) and not restored:
+                # Without an explicit target-to-event map the rendered material
+                # cannot safely be split into accepted and unaccepted facts.
+                if any(not link.get('target_ids') for link in remaining):
+                    return None
+                targets = {key for link in remaining for key in link['target_ids']}
+                payload['matched_target_ids'] = [key for key in payload.get('matched_target_ids', ()) if key in targets]
+                payload['event_links'] = remaining
         valid = []
         for key in payload.get('matched_target_ids', ()):
             item = next((item for item in payload.get('target_analyses', ()) if item.get('target_id') == key), None)
@@ -171,6 +234,12 @@ class DeliveryDispatcher:
                 valid.append(item)
         if not valid:
             return None
+        if 'event_links' in payload and not frozen:
+            targets = {item['target_id'] for item in valid}
+            payload['event_links'] = [dict(link, target_ids=[key for key in link['target_ids'] if key in targets])
+                                     if 'target_ids' in link else link
+                                     for link in payload['event_links']
+                                     if not link.get('target_ids') or targets.intersection(link['target_ids'])]
         return dict(payload, matched_target_ids=[item['target_id'] for item in valid], target_analyses=valid)
 
     def _member_recipient(self, conn, payload):
@@ -280,7 +349,7 @@ class DeliveryDispatcher:
                 if member_mode and "member_id" not in payload and payload.get("event") != "push":
                     self._cancel(conn, item.id, owner)
                     return True
-                payload = self._prepare_payload(conn, payload, current)
+                payload = self._prepare_payload(conn, payload, current, outbox_id=item.id)
                 if payload is None:
                     self._cancel(conn, item.id, owner)
                     return True
@@ -309,7 +378,7 @@ class DeliveryDispatcher:
                 conn = connect(self.settings.database_path)
                 try:
                     checkpoint = current + timedelta(seconds=time.monotonic() - started)
-                    prepared = self._prepare_payload(conn, payload, checkpoint)
+                    prepared = self._prepare_payload(conn, payload, checkpoint, outbox_id=item.id)
                     if prepared is None:
                         self._cancel(conn, item.id, owner)
                         return True
@@ -338,14 +407,30 @@ class DeliveryDispatcher:
                 # Each successful segment is committed before the next request.
                 self.client.send_chunk(chunks[index], to_user=recipient)
                 payload["accepted_chunks"] = index + 1
+                accepted_at = current + timedelta(seconds=time.monotonic() - started)
                 conn = connect(self.settings.database_path)
                 try:
-                    conn.execute("UPDATE outbox SET payload_json=? WHERE id=? AND lease_owner=? AND status='sending'",
-                        (json.dumps(payload, ensure_ascii=False), item.id, owner))
+                    with write_transaction(conn):
+                        changed = conn.execute("UPDATE outbox SET payload_json=? WHERE id=? AND lease_owner=? AND status='sending'",
+                            (json.dumps(payload, ensure_ascii=False), item.id, owner)).rowcount
+                        if not changed:
+                            return True
+                        record_delivery_acceptance(conn, payload, outbox_id=item.id,
+                                                   now=accepted_at, complete=index + 1 == len(chunks))
                 finally:
                     conn.close()
                 index += 1
-            self.store.mark_sent(item.id, owner=owner, now=current)
+            conn = connect(self.settings.database_path)
+            try:
+                with write_transaction(conn):
+                    changed = conn.execute("""UPDATE outbox SET status='sent',sent_at=?,locked_until=NULL,
+                        lease_owner=NULL,last_error=NULL WHERE id=? AND status='sending' AND lease_owner=?""",
+                        (_iso(current + timedelta(seconds=time.monotonic() - started)), item.id, owner)).rowcount
+                    if changed:
+                        record_delivery_acceptance(conn, payload, outbox_id=item.id,
+                                                   now=current + timedelta(seconds=time.monotonic() - started), complete=True)
+            finally:
+                conn.close()
         except Exception as exc:
             self.store.mark_failed(item.id, owner=owner, now=current,
                                    error=type(exc).__name__, attempts=item.attempts)

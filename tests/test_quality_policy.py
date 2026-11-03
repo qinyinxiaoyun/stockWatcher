@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from stock_watch.db import connect, init_db
+from stock_watch.db import SCHEMA_VERSION, connect, init_db
 from stock_watch.news import NewsArticle, NewsTarget, SHANGHAI, normalize_article
 from stock_watch.quality import (
     QualityStore, canonical_identity, canonicalize_article, canonical_url,
@@ -320,7 +320,7 @@ def test_schema_four_is_idempotent_and_keeps_existing_config_evidence():
     conn.execute("PRAGMA user_version=3")
     init_db(conn)
     init_db(conn)
-    assert conn.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert conn.execute("PRAGMA user_version").fetchone()[0] == SCHEMA_VERSION
     assert tuple(config) == tuple(conn.execute("SELECT * FROM config_state").fetchone())
     assert conn.execute("SELECT article_key FROM seen_articles").fetchone()[0] == "old"
     assert conn.execute("SELECT 1 FROM quality_article_observations").fetchone() is None

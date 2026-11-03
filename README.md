@@ -46,6 +46,8 @@ uv pip install --python .venv\Scripts\python.exe -e ".[dev]"
 
 ## 管理与运维
 
+本地版本化公司研究、关键假设与监控映射入口见[研究基线](docs/RESEARCH_BASELINE.md)。`research`命令仅读写本地材料，不自动启动采集、模型或推送；研究数据保存在`data/`，与新闻通知热缓存分别留存。
+
 ```powershell
 .\.venv\Scripts\python.exe -m stock_watch --help
 .\.venv\Scripts\python.exe -m stock_watch --env-file .env worker --once --fake

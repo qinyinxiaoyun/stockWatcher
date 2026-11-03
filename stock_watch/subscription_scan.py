@@ -12,10 +12,12 @@ from . import analysis_jobs as jobs
 from .analyzer import DeepSeekAnalyzer, validate_analysis
 from .model_usage import record_usage, reserve_budget, settle_budget
 from .monitor import RunLeaseLost, _iso, open_connection, write_transaction
-from .news import EastmoneyNewsClient, NewsTarget
-from .notifications import enqueue_candidate, flush_notifications, seed_sent
+from .news import EastmoneyNewsClient, NewsTarget, parse_published_at
+from .notifications import (enqueue_candidate, flush_notifications, seed_sent,
+                            should_notify_event, record_delivery_acceptance)
+from .events import register_event
 from .quality import (QUALITY_RULE_VERSION, QualityStore, canonicalize_article,
-                      classify_article, event_identity, freshness, revision_key)
+                      canonical_identity, classify_article, event_identity, freshness, revision_key)
 from .query_policy import select_queries
 from .scheduler import SHANGHAI, as_shanghai, slot_for_time
 from .subscription_monitor import _article_dict, _digest, _read_article, article_version
@@ -48,7 +50,13 @@ def _save_report(conn, article, source, now):
     key, identity, content = article_version(article, source)
     old = conn.execute("SELECT article_json FROM subscription_articles WHERE article_key=?", (key,)).fetchone()
     if old:
-        article = _combine(_read_article(old[0]), article)
+        incoming = article
+        article = replace(_combine(_read_article(old[0]), incoming),
+                          published_at=incoming.published_at,
+                          source_published_at=incoming.source_published_at,
+                          time_status=incoming.time_status,
+                          first_seen_at=incoming.first_seen_at,
+                          last_seen_at=incoming.last_seen_at)
     conn.execute("""INSERT INTO subscription_articles VALUES (?,?,?,?,?,?,?)
         ON CONFLICT(article_key) DO UPDATE SET article_json=excluded.article_json,
         published_at=excluded.published_at,fetched_at=excluded.fetched_at""",
@@ -57,11 +65,12 @@ def _save_report(conn, article, source, now):
     return key, article
 
 
-def _task_key(service, article, target, member):
+def _task_key(service, article, target, member, observation=None):
     # Exact factual events can have several report URLs. The quality helper
     # keeps unproven similarities report-scoped; distinct targets/focus/privacy
     # still enter the existing analysis specification independently.
-    content = _digest([service.source_namespace, *event_identity(article, target)])
+    identity = (observation.event_id, observation.change_id) if observation else event_identity(article, target)
+    content = _digest([service.source_namespace, *identity])
     return service._cache_key(content, target, member)
 
 
@@ -98,7 +107,7 @@ def _notification_history(conn, scan, now):
     return history
 
 
-def _matching_candidate(history, article, target, *, additional_only=False):
+def _matching_candidate(history, article, target, *, observation=None, additional_only=False):
     """Match only a report identity or exact facts for a known affected subject."""
     matches = []
     for row in history:
@@ -106,19 +115,50 @@ def _matching_candidate(history, article, target, *, additional_only=False):
         if additional_only and target.key in value.get('matched_target_ids', ()):
             continue
         previous = _read_article(json.dumps(value['article']))
+        same_facts = False
+        if observation is not None:
+            incoming = set(observation.as_link().get('fact_ids', ()))
+            for link in value.get('event_links', ()):
+                prior_facts = {fact['fact_id'] for fact in link.get('event_facts', link.get('facts', ())) if 'fact_id' in fact}
+                if link.get('event_id') == observation.event_id and incoming and incoming <= prior_facts:
+                    same_facts = True
         same_article = article.key == previous.key and revision_key(article) == revision_key(previous)
         same_event = any(event_identity(article, NewsTarget(item['target_id'], item['name'], item['name']))
                          == event_identity(previous, NewsTarget(item['target_id'], item['name'], item['name']))
                          for item in value.get('target_analyses', ()))
-        if same_article or same_event:
+        if same_facts or same_article or same_event:
             matches.append(row)
     return next((row for row in matches if row['_editable']), matches[0] if matches else None)
+
+
+def _fact_article(article, observation):
+    """A reprint's date cannot renew the lifetime of its known facts."""
+    if observation is None or not observation.strong_identity or observation.first_public_at is None:
+        return article
+    return replace(article, published_at=observation.first_public_at,
+                   source_published_at=observation.first_public_at)
+
+
+def _analysis_article(article, observation):
+    if observation is None or not observation.strong_identity or not observation.facts:
+        return article
+    fields = ('metric', 'period', 'basis', 'unit', 'relation', 'value', 'status')
+    def compact(fact):
+        return {field: fact.get(field) for field in fields} if fact else None
+    changes = [dict(kind=item['kind'], before=compact(item.get('before')), after=compact(item.get('after')))
+               for item in observation.changes if item['kind'] != 'duplicate']
+    context = dict(event_id=observation.event_id, event_version=observation.change_id,
+                   changes=changes,
+                   facts=[compact(fact) for fact in observation.facts if not fact.get('stale')])
+    return replace(article, fact_context=context)
 
 
 def _migrate(service, conn, now):
     """Map old evaluations/accepted notifications without replaying history."""
     marker = "quality_history_v1:" + _digest(service.corp_id)
     if conn.execute("SELECT 1 FROM app_meta WHERE key=?", (marker,)).fetchone():
+        _migrate_report_versions(service, conn, now)
+        _migrate_event_receipts(service, conn, now)
         return
     store = QualityStore(conn)
 
@@ -162,6 +202,116 @@ def _migrate(service, conn, now):
         seed_sent(conn, payload, article_key=key, event_id="article:" + canonical,
                   event_version=revision, outbox_id=row["id"], now=now)
     conn.execute("INSERT INTO app_meta VALUES (?,?)", (marker, "1"))
+    _migrate_report_versions(service, conn, now)
+    _migrate_event_receipts(service, conn, now)
+
+
+def _migrate_report_versions(service, conn, now):
+    """Map old revision keys without lending old evaluations new facts."""
+    marker = "business_report_revisions_v1:" + _digest(service.corp_id)
+    if conn.execute("SELECT 1 FROM app_meta WHERE key=?", (marker,)).fetchone():
+        return
+    store = QualityStore(conn)
+    for row in conn.execute("SELECT * FROM subscription_articles ORDER BY published_at,fetched_at,article_key").fetchall():
+        original = canonicalize_article(_read_article(row['article_json']))
+        observed = store.observe(original, now, namespace=row['source'])
+        historical = replace(original, key=observed.key, first_seen_at=observed.first_seen_at,
+                             last_seen_at=observed.last_seen_at,
+                             source_published_at=original.source_published_at or (
+                                 original.published_at if original.time_status == 'trusted' else None))
+        new_key, _ = _save_report(conn, historical, row['source'], now)
+        if new_key != row['article_key']:
+            conn.execute("""INSERT INTO quality_article_key_map VALUES (?,?)
+                ON CONFLICT(old_article_key) DO UPDATE SET article_key=excluded.article_key""",
+                (row['article_key'], new_key))
+            conn.execute("""INSERT OR IGNORE INTO member_evaluations
+                SELECT e.member_id,?,e.target_key,e.evaluated_at,e.outcome
+                FROM member_evaluations e JOIN members m ON m.id=e.member_id
+                WHERE e.article_key=? AND m.corp_id=?""", (new_key, row['article_key'], service.corp_id))
+    conn.execute("INSERT INTO app_meta VALUES (?,?)", (marker, "1"))
+
+
+def _migrate_event_receipts(service, conn, now):
+    """Reconstruct acceptance only from outbox evidence, never evaluation flags.
+
+    This additive migration leaves frozen original payloads and subscriptions
+    unchanged. The legacy marker cannot prove the new ledger was populated.
+    """
+    marker = "business_event_receipts_v1:" + _digest(service.corp_id)
+    if conn.execute("SELECT 1 FROM app_meta WHERE key=?", (marker,)).fetchone():
+        return
+    rows = conn.execute("SELECT id,status,payload_json,sent_at,created_at FROM outbox ORDER BY id").fetchall()
+    for row in rows:
+        payload = json.loads(row['payload_json'])
+        if (payload.get('event') not in {'subscription.news', 'subscription.digest'}
+                or payload.get('corp_id') != service.corp_id):
+            continue
+        value = dict(payload)
+        items = value.get('items', ()) if value['event'] == 'subscription.digest' else (value,)
+        if value['event'] == 'subscription.digest':
+            value['items'] = [dict(item) for item in items]
+        for item in (value['items'] if value['event'] == 'subscription.digest' else (value,)):
+            if (item.get('corp_id') != service.corp_id or not item.get('article')
+                    or item.get('member_id') != value.get('member_id')
+                    or item.get('touser') != value.get('touser')):
+                continue
+            article = canonicalize_article(_read_article(json.dumps(item['article'])))
+            links = []
+            for target in item.get('target_analyses', ()):
+                observed = register_event(conn, article,
+                    NewsTarget(target['target_id'], target['name'], target['name']), now)
+                link = dict(observed.as_link(), target_ids=[target['target_id']])
+                links.append(link)
+            if links and (row['status'] in {'pending', 'sending', 'sent'} or payload.get('accepted_chunks', 0)):
+                _seed_candidate_links(conn, row, item, article, links, now)
+            unrecorded = []
+            for link in links:
+                accepted = conn.execute("""SELECT complete FROM notification_acceptances
+                    WHERE corp_id=? AND member_id=? AND event_id=? AND event_version=?""",
+                    (service.corp_id, item['member_id'], link['event_id'], link['event_version'])).fetchone()
+                if accepted is None or (row['status'] == 'sent' and not accepted['complete']):
+                    unrecorded.append(link)
+            if unrecorded:
+                item['event_links'] = unrecorded
+                item.setdefault('event_id', unrecorded[0]['event_id'])
+                item.setdefault('event_version', unrecorded[0]['event_version'])
+            else:
+                item['event_links'] = []
+        if row['status'] == 'sent' or payload.get('accepted_chunks', 0):
+            record_delivery_acceptance(conn, value, outbox_id=row['id'],
+                                       now=parse_published_at(row['sent_at']) if row['sent_at'] else now,
+                                       complete=row['status'] == 'sent')
+    conn.execute("INSERT INTO app_meta VALUES (?,?)", (marker, "1"))
+
+
+def _seed_candidate_links(conn, outbox, item, article, links, now):
+    """Attach proven event metadata to old reservations without changing text."""
+    for row in conn.execute("""SELECT * FROM notification_candidates
+        WHERE outbox_id=? AND corp_id=? AND member_id=?""",
+        (outbox['id'], item['corp_id'], item['member_id'])).fetchall():
+        value = json.loads(row['payload_json'])
+        if any(value.get(key) != item.get(key) for key in ('corp_id', 'member_id', 'member_generation', 'touser')):
+            continue
+        previous = _read_article(json.dumps(value['article']))
+        if canonical_identity(previous) == canonical_identity(article) and revision_key(previous) == revision_key(article):
+            value['event_links'] = links
+            conn.execute('UPDATE notification_candidates SET payload_json=? WHERE id=?',
+                         (json.dumps(value, ensure_ascii=False), row['id']))
+            return
+    event_id = item.get('event_id') or links[0]['event_id']
+    version = item.get('event_version') or links[0]['event_version']
+    timing = freshness(article, now)
+    expiry = item.get('expires_at') or _iso(timing.expires_at or article.published_at + timedelta(hours=2))
+    mode = item.get('mode', 'realtime')
+    if mode not in {'realtime', 'morning', 'urgent', 'backfill'}:
+        mode = 'realtime'
+    value = dict(item, event_id=event_id, event_version=version, event_links=links, mode=mode, expires_at=expiry)
+    conn.execute("""INSERT OR IGNORE INTO notification_candidates(corp_id,member_id,member_generation,
+        article_key,event_id,event_version,mode,expires_at,payload_json,status,created_at,queued_at,outbox_id)
+        VALUES(?,?,?,?,?,?,?,?,?,'queued',?,?,?)""",
+        (item['corp_id'], item['member_id'], item.get('member_generation', 1),
+         article_version(article, 'eastmoney')[0], event_id, version, mode, expiry,
+         json.dumps(value, ensure_ascii=False), outbox['created_at'], outbox['created_at'], outbox['id']))
 
 
 def prepare_history(conn, now):
@@ -237,6 +387,13 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                      (slot, scan.member.id, key, reason, _iso(checkpoint())))
 
     queries, raw, succeeded = {}, [], set()
+    subject_names = {}
+    event_observations = {}
+    def event_target(article, target_id):
+        target = queries[target_id]
+        text = article.title + '。' + article.summary
+        matching = sorted((name for name in subject_names[target_id] if name in text), key=lambda name: (-len(name), name))
+        return replace(target, name=matching[0]) if matching else target
     def provider_for(member):
         return _digest([service.corp_id, member.id if member.analysis_private else "public",
                         getattr(getattr(service.analyzer, "transport", None), "endpoint", "offline")])
@@ -246,9 +403,15 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
             transaction(lambda conn: _migrate(service, conn, checkpoint()))
         for scan in scans:
             for target in scan.targets.values():
+                subject_names.setdefault(target.key, set()).add(target.name)
                 previous = queries.get(target.key)
                 union = tuple(dict.fromkeys((*(previous.queries if previous else ()), *(target.queries or (target.query,)))))
-                queries[target.key] = replace(target, queries=union, focus=(), effective_at=None)
+                if previous:
+                    representative = min((previous, target), key=lambda value: (value.kind, value.name, value.query))
+                    union = tuple(sorted(set((*union, previous.name, target.name))))
+                else:
+                    representative = target
+                queries[target.key] = replace(representative, queries=union, focus=(), effective_at=None)
         for key, target in queries.items():
             if time.monotonic() - started >= settings.run_timeout_seconds:
                 errors.append("fetch deadline: TimeoutError")
@@ -269,10 +432,15 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
         else:
             def save(conn):
                 store = QualityStore(conn)
-                for item in raw:
+                for item in sorted(raw, key=lambda value: value.source_published_at or value.published_at):
                     article = store.observe(item, checkpoint(), namespace=service.source_namespace)
                     _save_report(conn, article, service.source_namespace, checkpoint())
                     store.record_decision(article, classify_article(article), freshness(article, checkpoint()), checkpoint())
+                    # Archive observed facts even when their alert window has
+                    # closed. Research evidence is independent of notification.
+                    for target_id in article.target_keys:
+                        if target_id in queries:
+                            register_event(conn, article, event_target(article, target_id), checkpoint())
             transaction(save)
             with open_connection(service.db) as conn:
                 rows = conn.execute("""SELECT a.*,q.revision_key AS current_revision FROM subscription_articles a
@@ -286,15 +454,21 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     article = _read_article(row["article_json"])
                     if revision_key(article) == row["current_revision"]:
                         pool[row["article_key"]] = (article, row["source"])
+            def observe_pool(conn):
+                for key, (article, _) in sorted(pool.items(), key=lambda item: item[1][0].published_at):
+                    for target_id in article.target_keys:
+                        if target_id in queries:
+                            event_observations[key, target_id] = register_event(conn, article, event_target(article, target_id), checkpoint())
+            transaction(observe_pool)
         candidates = [[] for _ in scans]
         for position, scan in enumerate(scans):
             with open_connection(service.db) as conn:
                 seen = {(r[0], r[1]) for r in conn.execute("SELECT article_key,target_key FROM member_evaluations WHERE member_id=?", (scan.member.id,))}
                 legacy = {r[0] for r in conn.execute("SELECT article_key FROM member_legacy_seen WHERE member_id=?", (scan.member.id,))}
                 baselines = {(r[0], r[1]) for r in conn.execute("SELECT source,target_key FROM member_baselines WHERE member_id=?", (scan.member.id,))}
-                delivered = {(r[0], r[1]) for r in conn.execute("SELECT canonical_id,revision_key FROM quality_member_articles WHERE member_id=?", (scan.member.id,))}
-                events = {(r[0], r[1]) for r in conn.execute("SELECT event_id,event_version FROM quality_member_events WHERE member_id=?", (scan.member.id,))}
                 notification_history = _notification_history(conn, scan, checkpoint())
+                notified = {pair: observed.notify_eligible and not should_notify_event(conn, service.corp_id, scan.member.id, observed.as_link())
+                            for pair, observed in event_observations.items()}
             evaluations, consumed, policy_skips = [], set(), []
             for key, (article, source) in pool.items():
                 decision = classify_article(article)
@@ -303,6 +477,9 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                 for target in scan.targets.values():
                     if target.key not in article.target_keys:
                         continue
+                    observation = event_observations.get((key, target.key))
+                    fact_article = _fact_article(article, observation)
+                    target_timing = freshness(fact_article, checkpoint())
                     if not manual and (key, target.key) in seen:
                         counts["deduplicated"] += 1
                         continue
@@ -313,7 +490,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                         counts["deduplicated"] += 1
                         counts["baseline_seen"] += 1
                         continue
-                    if target.effective_at and article.published_at < target.effective_at:
+                    if target.effective_at and fact_article.published_at < target.effective_at:
                         continue
                     established = (source, target.key) in baselines
                     new_source = not established and any(t == target.key for _, t in baselines)
@@ -322,7 +499,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                         evaluations.append((key, target.key, "baseline"))
                         counts["baseline_seen"] += 1
                         continue
-                    if not manual and ((article.key, revision_key(article)) in delivered or event_identity(article, target) in events) and _matching_candidate(notification_history, article, target, additional_only=True) is None:
+                    if not manual and notified.get((key, target.key), False) and _matching_candidate(notification_history, article, target, observation=observation, additional_only=True) is None:
                         evaluations.append((key, target.key, "duplicate_event"))
                         counts["deduplicated"] += 1
                         continue
@@ -331,13 +508,13 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                         metrics["filtered"] += 1
                         policy_skips.append((key, decision.reason))
                         continue
-                    if not manual and timing.mode not in {"realtime", "morning", "urgent"}:
-                        if timing.mode == "expired":
+                    if not manual and target_timing.mode not in {"realtime", "morning", "urgent"}:
+                        if target_timing.mode == "expired":
                             evaluations.append((key, target.key, "expired:v" + QUALITY_RULE_VERSION))
                             metrics["expired"] += 1
                         else:
                             metrics["deferred"] += 1
-                        policy_skips.append((key, timing.reason))
+                        policy_skips.append((key, target_timing.reason))
                         continue
                     targets.append(target)
                 if targets:
@@ -362,8 +539,9 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
         needed, cache = {}, {}
         for scan, (key, article, targets, decision, timing) in ordered:
             for target in targets:
-                cache_key = _task_key(service, article, target, scan.member)
-                needed.setdefault(cache_key, []).append((scan, article, target, decision))
+                cache_key = _task_key(service, article, target, scan.member, event_observations.get((key, target.key)))
+                analyzed_article = _analysis_article(article, event_observations.get((key, target.key)))
+                needed.setdefault(cache_key, []).append((scan, analyzed_article, target, decision))
         if needed:
             with open_connection(service.db) as conn:
                 keys = list(needed)
@@ -509,7 +687,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     cache[cache_key] = outcome
                     metrics["analysis_succeeded"] += 1
         for scan, (key, article, targets, decision, timing) in ordered:
-            results = [(target, cache.get(_task_key(service, article, target, scan.member))) for target in targets]
+            results = [(target, cache.get(_task_key(service, article, target, scan.member, event_observations.get((key, target.key))))) for target in targets]
             results = [(target, analysis) for target, analysis in results if analysis is not None]
             if not results:
                 continue
@@ -529,24 +707,26 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                 novel = []
                 representatives = []
                 for target, analysis in matches:
-                    prior = _matching_candidate(history, article, target)
+                    observation = event_observations.get((key, target.key))
+                    if observation is not None and not should_notify_event(conn, service.corp_id, member.id, observation.as_link()):
+                        continue
+                    prior = _matching_candidate(history, article, target, observation=observation)
                     if prior:
                         if not prior['_editable'] or target.key in prior['_notification'].get('matched_target_ids', ()):
                             continue
                         representatives.append(prior)
-                    elif conn.execute("SELECT 1 FROM quality_member_events WHERE member_id=? AND event_id=? AND event_version=?",
-                                      (member.id, *event_identity(article, target, analysis))).fetchone():
-                        continue
                     novel.append((target, analysis))
                 if not novel:
                     return 0
                 # Keep source deadlines fixed; model significance cannot make an
                 # expired routine story newly current.
-                checked = freshness(article, checkpoint())
-                mode, expiry = checked.mode, checked.expires_at
+                checked_times = [freshness(_fact_article(article, event_observations.get((key, target.key))), checkpoint())
+                                 for target, _ in novel]
+                checked = checked_times[0]
+                mode, expiry = checked.mode, min((item.expires_at for item in checked_times if item.expires_at), default=None)
                 if manual:
                     mode, expiry = "backfill", checkpoint() + timedelta(hours=1)
-                elif mode not in {"realtime", "morning", "urgent"}:
+                elif any(item.mode not in {"realtime", "morning", "urgent"} for item in checked_times):
                     audit(conn, scan, key, "expired_after_analysis")
                     return 0
                 strongest = max(novel, key=lambda item: {"普通": 0, "重要": 1, "重大": 2}[item[1].level])[1]
@@ -563,13 +743,27 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     "article": _article_dict(article), "analysis": strongest.to_dict(),
                     "target_names": [t.name for t, _ in novel],
                     "target_analyses": [{"target_id": t.key, "name": t.name, "analysis": a.to_dict()} for t, a in novel]}
+                links = {}
+                for target, _ in novel:
+                    observation = event_observations.get((key, target.key))
+                    if observation is None:
+                        continue
+                    link = observation.as_link()
+                    pair = link['event_id'], link['event_version']
+                    if pair not in links:
+                        links[pair] = dict(link, target_ids=[])
+                    links[pair]['target_ids'].append(target.key)
+                payload['event_links'] = list(links.values())
+                primary = payload['event_links'][0] if payload['event_links'] else None
                 representative = representatives[0] if representatives else None
                 inserted = enqueue_candidate(conn, payload,
                     article_key=representative['article_key'] if representative else key,
-                    event_id=representative['event_id'] if representative else "article:" + article.key,
-                    event_version=representative['event_version'] if representative else revision_key(article),
+                    event_id=representative['event_id'] if representative else primary['event_id'] if primary else "article:" + article.key,
+                    event_version=representative['event_version'] if representative else primary['event_version'] if primary else revision_key(article),
                     mode='urgent' if mode == 'urgent' else representative['mode'] if representative else mode,
                     expires_at=representative['expires_at'] if representative else expiry, now=checkpoint())
+                # Legacy tables retain evaluation evidence for compatibility;
+                # only notification_acceptances proves API acceptance.
                 conn.execute("INSERT OR IGNORE INTO quality_member_articles VALUES (?,?,?,?)",
                     (member.id, article.key, revision_key(article), _iso(checkpoint())))
                 for target, analysis in novel:

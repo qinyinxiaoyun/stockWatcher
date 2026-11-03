@@ -17,8 +17,9 @@ from typing import Any, Mapping
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from .news import NewsArticle, NewsTarget, SHANGHAI, _clean_text, parse_published_at
+from .events import EVENT_SCHEMA_SQL, anchored_identity, factual_revision_tokens
 
-QUALITY_RULE_VERSION = "1"
+QUALITY_RULE_VERSION = "2"
 QUALITY_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS quality_articles (
     canonical_id TEXT PRIMARY KEY,
@@ -81,7 +82,7 @@ CREATE TABLE IF NOT EXISTS quality_decisions (
     expires_at TEXT,
     decided_at TEXT NOT NULL
 );
-"""
+""" + EVENT_SCHEMA_SQL
 
 
 def _hash(*parts: str) -> str:
@@ -190,7 +191,7 @@ def _update_evidence(summary: str) -> str:
 
 
 def revision_key(article: NewsArticle) -> str:
-    return _hash("revision-v1", _clean_text(article.title), _update_evidence(article.summary))
+    return _hash("revision-v2", _clean_text(article.title), _update_evidence(article.summary), *factual_revision_tokens(article))
 
 
 @dataclass(frozen=True, slots=True)
@@ -294,6 +295,9 @@ def event_identity(article: NewsArticle, target: NewsTarget | str, analysis: Any
     and are removed from the event stem only when an explicit correction exists.
     """
     del analysis  # Free model wording is not trusted identity evidence.
+    anchored = anchored_identity(article, target)
+    if anchored:
+        return anchored, _hash("business-event-version-v1", *factual_revision_tokens(article), _update_evidence(article.summary))
     title = _clean_text(article.title)
     title = re.sub(r"^(?:快讯|公告|独家|重磅|公司新闻|消息)[:：]", "", title)
     title = re.sub(r"[（(](?:转载|更新|更正)[）)]$", "", title)
@@ -312,9 +316,11 @@ def event_identity(article: NewsArticle, target: NewsTarget | str, analysis: Any
         stem = title
         if re.search(r"更正|修正", title):
             stem = re.sub(r"更正|修正", "", stem)
-            stem = _FACT_NUMBER.sub("#", stem)
+            # A correction may vary its amount, never its project/order/date
+            # discriminator. Bare identity digits must survive unchanged.
+            stem = _MATERIAL_NUMBER.sub("#", stem)
         event_id = _hash("event-v1", subject, event_type, date, stem)
-    return event_id, _hash("event-version-v1", title, _update_evidence(article.summary))
+    return event_id, _hash("event-version-v2", title, _update_evidence(article.summary), *factual_revision_tokens(article))
 
 
 def _iso(value: datetime) -> str:
@@ -343,11 +349,22 @@ class QualityStore:
             if not observations:
                 return article, False
             prior = max(observations, key=lambda row: (bool(_update_evidence(row["summary"])), len(row["summary"])))
-        old_evidence = set(_update_evidence(prior["summary"]).split("|")) - {""}
-        new_evidence = set(_update_evidence(article.summary).split("|")) - {""}
         incoming_revision = revision_key(article)
         old_article = replace(article, title=prior["title"], summary=prior["summary"])
+        old_evidence = (set(_update_evidence(prior["summary"]).split("|")) - {""}) | set(factual_revision_tokens(old_article))
+        new_evidence = (set(_update_evidence(article.summary).split("|")) - {""}) | set(factual_revision_tokens(article))
         same_title = article.title == prior["title"]
+        old_updates = set(_update_evidence(prior["summary"]).split("|")) - {""}
+        new_updates = set(_update_evidence(article.summary).split("|")) - {""}
+        old_fact_keys = {json.loads(token)["key"] for token in factual_revision_tokens(old_article)}
+        new_fact_keys = {json.loads(token)["key"] for token in factual_revision_tokens(article)}
+        if same_title and old_updates and new_updates <= old_updates and new_fact_keys <= old_fact_keys:
+            return old_article, True
+        if same_title and old_updates and new_updates <= old_updates and new_fact_keys - old_fact_keys:
+            # New independent metrics enrich the accepted representative; they
+            # cannot silently erase an earlier corrected amount absent here.
+            article = replace(article, summary=prior["summary"] + "。" + article.summary)
+            incoming_revision = revision_key(article)
         if same_title and old_evidence and new_evidence <= old_evidence:
             # A subset is an incomplete excerpt, including an excerpt with no
             # correction words. It cannot erase previously accepted facts.
@@ -412,7 +429,8 @@ class QualityStore:
                         article.time_status == 'trusted'
                         and source_date and parse_published_at(source_date) > prior
                         and revision != existing["revision_key"]
-                        and _UPDATE.search(article.title + "。" + article.summary)
+                        and (_UPDATE.search(article.title + "。" + article.summary)
+                             or set(factual_revision_tokens(article)) - set(factual_revision_tokens(replace(article, summary=""))))
                     )
                     if source_date and abs((parse_published_at(source_date) - prior).total_seconds()) > 300:
                         status = "trusted" if substantive_update else "conflict"

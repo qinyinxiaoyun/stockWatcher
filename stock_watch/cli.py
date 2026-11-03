@@ -82,6 +82,8 @@ def parser():
     retry = sub.add_parser("retry-outbox", help="显式重试dead待投递项")
     retry.add_argument("id", type=int)
     sub.add_parser("demo", help="独立临时库内演示明确指令→动态检索→分析→模拟投递")
+    from .research_cli import add_parser
+    add_parser(sub)
     return result
 
 
@@ -267,6 +269,9 @@ def main(argv=None):
                 output({"database": str(settings.database_path.resolve()), "schema_version": SCHEMA_VERSION,
                         "sqlite": sqlite3.sqlite_version, "journal_mode": conn.execute("PRAGMA journal_mode").fetchone()[0],
                         "monitor_enabled": settings.monitor_enabled})
+            elif args.command == "research":
+                from .research_cli import run
+                output(run(args, conn))
             elif args.command == "config":
                 from .config import ConfigStore
                 from .subscriptions import MemberConfigStore, MemberRegistry

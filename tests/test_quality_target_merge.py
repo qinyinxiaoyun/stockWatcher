@@ -175,6 +175,9 @@ def test_major_extraction_keeps_other_digest_items_and_existing_delivery_window(
     scan(path, Fetcher(second=True), analyzer)
     other = candidate(conn)
     other.update(event_id='independent-order', event_version='v1')
+    # This synthetic independent legacy event cannot retain the copied
+    # business-fact links of the first event.
+    other.pop('event_links', None)
     other['article'] = dict(other['article'], key='independent', title='合成企业新增另一项目订单200万元')
     enqueue_candidate(conn, other, article_key='independent', event_id='independent-order', event_version='v1',
                       mode='realtime', expires_at=other['expires_at'], now=NOW)
