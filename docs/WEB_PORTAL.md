@@ -1,6 +1,6 @@
 # 成员订阅与研究网页
 
-2026-11-03已发布运行版本39b61f2…：入口为`https://stock.janettepa.uk/`。真实HTTPS登录、组织总览、六个股票详情及退出后的访问隔离已验收；原健康/就绪接口仍正常。自动浏览器外观检查受工具环境限制未完成，不等同于已做所有浏览器/移动设备验收。
+2026-11-03当前运行017c2ae…：入口为`https://stock.janettepa.uk/`。前版39b61f2的验收手动补Origin，漏掉原生表单在no-referrer下的失败；现已修复策略及多标签Cookie覆盖，并按实际响应策略回放HTTPS登录/退出和六股票页。此回放不是实际浏览器自动化，浏览器工具仍受环境限制。已有登录页需刷新加载新策略，现有凭据不变。
 
 网页复用现有 `stock.janettepa.uk` HTTPS入口及Python app，保留`/health`、`/ready`、`/push`、`/wecom/callback`和域名校验文件。没有修改DNS或另外部署静态站点；app仍只处理HTTP，唯一worker继续原调度。
 

@@ -542,3 +542,10 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 真浏览器cua再次因Windows sandbox helper_unknown_error无法启动，未绕用其他驱动；规范合同回放和HTTP复现明确不称为真实浏览器实测。官方依据：https://fetch.spec.whatwg.org/#append-a-request-origin-header ，https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy#effect_on_the_origin_header 。
 - 修正ignored portal-ops.py生产验收：从实际页面策略推导Origin，再以同浏览器两次GET的旧表单提交，验证登录/退出；不再默认补入正确Origin。只在内存使用现有网页登录文件，未更改任何凭据，不记录私密页面正文。
 - 发布前真实baseline仍39b61f2…/schema5，app/worker健康，成员/全局/环境指纹与上一版相同（897f484f…），6研究版本；pending通知/候选/管理任务0。保留原受限发布/备份/队列保护，不改变监控、订阅、推送或研究数据。
+
+### 2026-11-03 22:03 登录表单修复生产验收
+
+- 业务SHA017c2ae5a06c4b9eb83e7e83de140d9c688bbaf6经[run41648977752](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/41648977752)完成test/image/deploy，三项success；Linux完整 **746 passed in64.62s**。镜像`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:8fdc4a2e2d7233e7d1dcc05e0c9d834b9f1d21c93ae79fdb74dac4c6d1d3d7e1`；自动升级前备份pre-image-20261103T140057178988Z.db为schema5/integrity ok，成员及全局配置与baseline一致。
+- 实际执行修正版`tmp/portal-ops.py check 017c2ae5a06c4b9eb83e7e83de140d9c688bbaf6`：从线上响应策略推导普通同源表单Origin，先开首页再开登录页、使用原页隐藏令牌和最新Cookie提交，成功登录总览，六股票页通过，退出清Cookie并恢复访问隔离，health/ready同SHA。工具输出native_form_origin_contract=true/two_tab_form_valid=true/real_browser_used=false；不再把手动Origin的urllib成功当作原生表单覆盖，仍不冒充真实浏览器自动化。
+- `tmp/deploy-current.py verify 017c2ae…`：app/worker healthy、UID10001/只读根、新SHA心跳14:03:27Z；公网health/ready code0/同SHA，最近10分钟错误0。正式库schema5/DELETE/完整性ok，原成员注册/配置/审计、全局配置及环境897f484f…均保持；两位active成员、6研究版本、sent87、模型用量记录275，所有待办0。既有用户名、密码、签名密钥未重置，未改监控/订阅/研究或额外试发模型消息。
+- WEB_PORTAL/PLAN标记当前修复版本及旧验收缺口；后续文档提交skip ci不再部署。用户需要刷新或重新打开登录页以替换已加载的旧响应策略/表单；现有网页登录凭据不变。
