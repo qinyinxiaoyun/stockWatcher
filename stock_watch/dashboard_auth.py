@@ -64,7 +64,11 @@ class Auth:
     def same_origin(self, environ):
         return environ.get('HTTP_ORIGIN') == self.settings.dashboard_origin.rstrip('/')
 
-    def issue_login_csrf(self):
+    def issue_login_csrf(self, environ=None):
+        existing = self._cookie(environ, CSRF_COOKIE) if environ is not None else None
+        if existing and self._verify(existing, 'login', 600):
+            # Opening another tab must not invalidate a still-live form.
+            return existing, existing
         token = self._issue('login', 600)
         return token, token
 

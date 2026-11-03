@@ -30,6 +30,10 @@ DASHBOARD_ORIGIN=https://stock.janettepa.uk
 
 ## 验收边界
 
+原生表单响应使用`Referrer-Policy: same-origin`：同源表单保留Origin，跨站链接仍不发送Referer。不能改成no-referrer再由服务端要求非空Origin，否则浏览器普通登录/退出表单会被误拒；详见[Fetch规范](https://fetch.spec.whatwg.org/#append-a-request-origin-header)。缺失、null和异源Origin继续拒绝，CSRF Cookie与隐藏字段仍须签名有效且匹配。
+
+同一浏览器打开多个登录页时复用经验证、尚未到期的CSRF Cookie，避免新标签覆盖旧表单；签名有效期仍为600秒，过期后刷新生成新值。验收工具必须根据页面实际Referrer-Policy回放原生表单的Origin规则，不能手动固定正确Origin而掩盖浏览器问题。该HTTP/规范回放仍不替代真实浏览器自动化测试。
+
 离线覆盖组织隔离、成员/研究状态、历史版本、只读指纹、输入转义、登录/退出、Cookie/CSRF/Origin、时效/限流和已有API兼容。UI以合成成员加公开研究资料做HTTP预览检查，不把真实成员或密码写入fixture。
 
 当前自动浏览器控制工具未能启动，无法声称已完成逐像素或移动设备浏览器实测；响应式样式、HTML和HTTP行为通过程序检查。正式发布后需验收真实HTTPS登录、总览、六个股票页及退出后的访问隔离。实际执行与发布记录见PROGRESS.md。

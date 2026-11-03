@@ -25,7 +25,9 @@ class Dashboard:
         common = [('Content-Type', 'text/css; charset=utf-8' if css else 'text/html; charset=utf-8'),
                   ('Content-Length', str(len(body))), ('Cache-Control', 'no-store, private'),
                   ('X-Content-Type-Options', 'nosniff'), ('X-Frame-Options', 'DENY'),
-                  ('Referrer-Policy', 'no-referrer'), ('X-Robots-Tag', 'noindex, nofollow, noarchive'),
+                  # Suppress cross-site referrers while allowing native same-
+                  # origin form POSTs to retain their Origin header.
+                  ('Referrer-Policy', 'same-origin'), ('X-Robots-Tag', 'noindex, nofollow, noarchive'),
                   ('Content-Security-Policy', "default-src 'none'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")]
         start_response(str(status) + ' ' + HTTPStatus(status).phrase, common + list(headers))
         return [body]
@@ -34,8 +36,8 @@ class Dashboard:
     def _cookie(name, value, age):
         return ('Set-Cookie', f'{name}={value}; Path=/; Max-Age={age}; HttpOnly; Secure; SameSite=Strict')
 
-    def _login_page(self, start_response, message='', next_path='/', status=200, username=''):
-        csrf, cookie = self.auth.issue_login_csrf()
+    def _login_page(self, start_response, message='', next_path='/', status=200, username='', environ=None):
+        csrf, cookie = self.auth.issue_login_csrf(environ)
         return self._response(start_response, status, render_login(message, csrf, next_path, username),
                               headers=[self._cookie(CSRF_COOKIE, cookie, 600)])
 
@@ -94,10 +96,10 @@ class Dashboard:
                 form = self._form(environ)
                 destination = self._destination(form.get('next', '/'))
                 if not self.auth.validate_login_csrf(environ, form.get('csrf', '')):
-                    return self._login_page(start_response, '登录页面已失效，请重新输入。', destination, 403)
+                    return self._login_page(start_response, '登录页面已失效，请重新输入。', destination, 403, environ=environ)
                 token = self.auth.login(form.get('username', ''), form.get('password', ''), environ.get('REMOTE_ADDR', 'unknown'))
                 if token is None:
-                    return self._login_page(start_response, '登录未成功，请核对访问凭证，稍后再试。', destination, 401)
+                    return self._login_page(start_response, '登录未成功，请核对访问凭证，稍后再试。', destination, 401, environ=environ)
                 return self._response(start_response, 303, headers=[('Location', destination), self._cookie(SESSION_COOKIE, token, 28800), self._cookie(CSRF_COOKIE, '', 0)])
             if method != 'GET':
                 return self._response(start_response, 405, render_error('此页面仅供查看。', 405))
@@ -105,9 +107,9 @@ class Dashboard:
             if path == '/login':
                 if session:
                     return self._response(start_response, 303, headers=[('Location', '/')])
-                return self._login_page(start_response, next_path=self._destination(query.get('next', '/')))
+                return self._login_page(start_response, next_path=self._destination(query.get('next', '/')), environ=environ)
             if not session:
-                return self._login_page(start_response, next_path=self._destination(path))
+                return self._login_page(start_response, next_path=self._destination(path), environ=environ)
             csrf = self.auth.issue_logout_csrf(session)
             if path == '/':
                 q = query.get('q', '')

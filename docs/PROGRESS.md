@@ -532,3 +532,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 当前pending通知/候选/管理任务均0，outbox仍sent87，模型usage仍275；本轮没有强制扫描、付费模型或实际消息测试。原微信/推送路径保持同一路由并通过离线回归；不将本轮网页HTTP测试称为重新验证手机真实收件。
 - 使用open_in_codex请求展示正式入口https://stock.janettepa.uk/，替换本机合成预览；已停止本任务owned loopback预览进程。实际浏览器视觉/移动适配尚未通过自动浏览器实测，限制已写WEB_PORTAL.md，HTTP与离线功能验收已完成。
 - 初始用户名/密码/入口仅保存在本机被Git忽略的.env.dashboard.local，服务器签名密钥没有复制到本机文件。没有把登录密码发入聊天、日志、提交、URL或研究fixture。后续仅文档提交带[skip ci]保存验收状态，不重新部署业务镜像。
+
+## 2026-11-03 网页原生表单“登录页面已失效”修复准备
+
+- 操作者反馈真实浏览器登录被提示页面已失效。复核发现dashboard响应全局no-referrer，而Auth.same_origin严格要求Origin等于配置域名；Fetch标准明确非CORS普通表单POST在no-referrer下Origin为null。原urllib验收手动填正确Origin，漏验该浏览器行为，先前HTTP成功不能证明原生表单成功。这是本轮修复的验收缺口；没有把问题归咎于操作者输入或重置密码。
+- root以线上GET取得的Referrer-Policy推导非CORS表单Origin，使用合成诊断凭据及真实签名预登录Cookie发请求，复现policy=no-referrer、Origin受抑、HTTP403和相同页面失效提示。没有读取用户本次表单或记录真实密码/Cookie。gpt-6.1-sol独立只读审查及官方MDN/WHATWG规范一致支持该机制；不是已捕获用户浏览器请求头的断言。
+- 最小修复将响应策略改same-origin，保留null/缺失/外源Origin拒绝和全部CSRF签名/绑定校验；跨站来源仍不发送Referer。另复用签名与有效期校验通过的既有预登录Cookie，防多标签页互相覆盖。600秒有效期不放宽，篡改/过期令牌仍拒绝，刷新取新值；会话/密码/环境配置不变。
+- 新增tests/test_dashboard_browser_contract.py十场景，按实际响应策略和Fetch非CORS原生POST规则推导Origin，不手动恒定正确值；旧代码7 passed/3 failed，准确覆盖策略冲突及多标签问题，修复后连同鉴权/API **51 passed in2.02s**。完整离线 `.venv/Scripts/python.exe -m pytest -q --tb=short`：**745 passed, 1 skipped in163.53s**；compileall/diffcheck通过，跳过仍为Windows真实Linux软链接用例。
+- 真浏览器cua再次因Windows sandbox helper_unknown_error无法启动，未绕用其他驱动；规范合同回放和HTTP复现明确不称为真实浏览器实测。官方依据：https://fetch.spec.whatwg.org/#append-a-request-origin-header ，https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Referrer-Policy#effect_on_the_origin_header 。
+- 修正ignored portal-ops.py生产验收：从实际页面策略推导Origin，再以同浏览器两次GET的旧表单提交，验证登录/退出；不再默认补入正确Origin。只在内存使用现有网页登录文件，未更改任何凭据，不记录私密页面正文。
+- 发布前真实baseline仍39b61f2…/schema5，app/worker健康，成员/全局/环境指纹与上一版相同（897f484f…），6研究版本；pending通知/候选/管理任务0。保留原受限发布/备份/队列保护，不改变监控、订阅、推送或研究数据。
