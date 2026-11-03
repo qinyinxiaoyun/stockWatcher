@@ -501,3 +501,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 新任务内tmp/deploy-current.py替代只支持唯一成员/schema4的旧验收工具，输出只含计数/哈希/版本与状态。实际baseline只读核对：生产72b7215…/schema4，两位active成员、个人版本均3，app/worker健康，原环境哈希208531db…、固定部署脚本928f1fc1…，pending outbox/管理任务/候选均0，journal=delete，完整性ok。成员注册/配置/审计与全局配置分别保存匿名指纹供发布后核对，不在记录保存成员消息或凭证。
 - 实际执行 `.venv/Scripts/python.exe tmp/deploy-current.py rehearse 72b72152ff6a777b68e171aa7559e2d2635c27e0`：服务器SQLite在线影子备份留在shared/data/release-checks，当前不可变旧镜像挂载新源码，在--network none/只读根/UID10001/降权能力下执行init_db+prepare_history及6份研究导入，schema4→5、integrity、配置/成员/seen/outbox原状态和正文指纹均保持，重复导入不增版本，导出成功。未下载生产库或把它变成fixture，未停止/写入正式业务库。
 - 演练工具先后修正审计表名称、宿主Python路径API兼容及最小权限目录可读性，失败仅发生在读取或影子目录/容器，正式数据未修改；最终结果ok/schema5/6公司/5基础可用/1部分覆盖/idempotent/preserved。正式发布仍经过原队列保护、停机备份、初始化及健康/版本心跳链路；不设置WORKER_QUEUE_APPROVED，不清队列，不改.env或受限SSH入口。
+
+### 2026-11-03 15:40 最新版本生产验收
+
+- 发布业务SHA为f3085e9e113bce25034c3f6fbf6bfbe62f25c2af，经既有main发布[run41588319498](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/41588319498)完成test/image/deploy，三项均success。Linux完整 **677 passed in76.40s**（本地Windows跳过的真实软链接用例在Linux已执行）；正式镜像为`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:9d25cd3a134346eb838585a25611d46590110bea33d33e66df4128a561a8bdd0`。未更改原受限发布入口或固定部署脚本928f1fc1…，未绕过待办队列保护。
+- 升级前自动备份shared/data/backups/pre-image-20261103T061543024085Z.db：schema4、integrity=ok，完整成员注册/配置/审计及全局配置指纹与发布前一致。schema5升级后不能直接运行低schema旧应用，不自动恢复覆盖共享库。
+- 实际执行`tmp/deploy-current.py verify f3085e9e113bce25034c3f6fbf6bfbe62f25c2af`核对新镜像/版本：app/worker均healthy、只读根、UID10001:10001，新SHA心跳07:40:15Z；公网health/ready均code0与相同SHA，最近10分钟ERROR/CRITICAL/Traceback均0。正式SQLite schema5、integrity=ok、journal=delete；环境哈希208531db…、全局及两位active成员完整配置/审计指纹与发布前完全相同，个人版本仍均3。监控保持既有true授权，没有新增收件人或重置订阅。
+- `business_report_revisions_v1`与`business_event_receipts_v1`标记各1，已重建业务事件507、事实271、版本529、实际接受证据91。升级后自然15:00及之前各正常时槽有成功记录，未强制补跑、试发或调用额外模型来验收。原sent outbox仍87；pending通知、候选及管理任务均0。事件表计数不等于手机提醒数，接受证据不代表已读，也不据空窗声称线上重复率归零。
+- 实际执行`tmp/deploy-current.py import-research f3085e9e113bce25034c3f6fbf6bfbe62f25c2af`：先持原部署锁并生成pre-research-import-*在线备份及完整性检查，再从stdin接收本地六份公开JSON，使用短事务追加导入并导出到`/srv/stock-watch/shared/data/research/reports/`。输入资料没有放入Git/镜像层或混入成员私有背景；此过程未访问新闻/DeepSeek/消息接口，没有写seen或outbox。
+- 实际导入结果6公司/6证券/6基线版本/6研究任务，5基础研究门槛通过/1部分覆盖；重复导入不增版本，预期比较和经过验证的收益预测均未启用。片仔癀保留已核半年报和最新三季报待核状态。导入后再次verify，库完整性、所有配置/环境指纹、健康与心跳均通过；研究资料处于生产持久目录，仍未接入自动研究刷新或实时新闻判断。
+- 更新PLAN、业务事件说明和研究设计/使用文档标记实际发布。后续仅文档提交带[skip ci]，不重新部署已验收业务镜像；剩余研究缺口及真实事件归并/手机收件效果按自然运行观察，不将离线程序测试解释为金融预测有效性。
