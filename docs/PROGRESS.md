@@ -549,3 +549,18 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 实际执行修正版`tmp/portal-ops.py check 017c2ae5a06c4b9eb83e7e83de140d9c688bbaf6`：从线上响应策略推导普通同源表单Origin，先开首页再开登录页、使用原页隐藏令牌和最新Cookie提交，成功登录总览，六股票页通过，退出清Cookie并恢复访问隔离，health/ready同SHA。工具输出native_form_origin_contract=true/two_tab_form_valid=true/real_browser_used=false；不再把手动Origin的urllib成功当作原生表单覆盖，仍不冒充真实浏览器自动化。
 - `tmp/deploy-current.py verify 017c2ae…`：app/worker healthy、UID10001/只读根、新SHA心跳14:03:27Z；公网health/ready code0/同SHA，最近10分钟错误0。正式库schema5/DELETE/完整性ok，原成员注册/配置/审计、全局配置及环境897f484f…均保持；两位active成员、6研究版本、sent87、模型用量记录275，所有待办0。既有用户名、密码、签名密钥未重置，未改监控/订阅/研究或额外试发模型消息。
 - WEB_PORTAL/PLAN标记当前修复版本及旧验收缺口；后续文档提交skip ci不再部署。用户需要刷新或重新打开登录页以替换已加载的旧响应策略/表单；现有网页登录凭据不变。
+
+## 2026-11-03 23:00 兆易创新深度研究基线第2版
+
+- 操作者指出初始研究只有最新财报分析、缺少多角度数据和结论，要求按原十部分方案先更新兆易创新。核对确认旧档仅1来源/6指标，最低fundamental门槛不能代表完整研究；本轮不改业务代码、schema、研究能力判定或自动监控范围。
+- root与三位gpt-6.1-sol分别调查并交叉审查财务、行业/竞争、治理/估值：以巨潮/港交所公司原件为核心，补2023—2025全年比较数、2026半年与三季度单季/累计、分产品收入/成本/毛利、渠道/终端、研发费用/资本化、库存/应收/受限现金/现金资本开支、供应商集中、关联采购及审批、并购承诺、分红实际完成和回购成交/注销边界；另读TrendForce细分供需、华邦官方业绩、Gartner PC出货和工信部汽车批发数据。发行人转引市场份额限定年份/产品范围，未宣称独立取得完整份额表。
+- 取得11月3日公开的公司IR记录2026-004原文公开镜像（10月29日会议），保留待官方同本核验；管理层称成本上涨滞后于售价、高毛利可能先维持再正常化、消费DRAM高价抑制需求及2027MCU展望，均归因管理层并区别前瞻/已实现。新版as_of为2026-11-03T14:53:28.400400Z，没有回填上午旧基线，也未用11月4日材料。
+- 数据成果：15来源、66条分类型陈述、99结构化原始/派生指标、8假设、10事件映射，十部分均展开。Q4悲观/基准/乐观收入与毛利参数、费用率12%/税率15%为内部压力假设；近似持续利润27.13/39.34/49.50亿元，不冒充扣非归母精确预测。估值为中周期归母持续业务利润×假设PE敏感性及A/H反算方法；无同期行情/最新完全稀释股数闭环或事前共识，不报当前PE/PB、目标价、超预期或收益概率，后两项能力仍false。
+- 9份公开PDF及SHA256、抽取正文和关键表格PNG缓存于ignored `data/research/sources/gigadevice/`；p6/7图像确认Q3短借2亿元为2025年末列，2026列空白不填造0；p17年度分产品及H1 p134合并附注核对，未误用母公司。研究底稿/三路审查/Decimal核算记录在ignored `data/research/working/`。已采纳审查意见：管理层预测保留“预计”、ASP压力测试固定销量/结构/成本而非收入、16.38%明确前五供应商中关联采购/年度总采购、A股跟踪证券与公司A+H身份分开、PE净利润和EV口径不混用。
+- 实际执行 `.venv/Scripts/python.exe tmp/build-gd-baseline.py`，归档输入文件SHA256 c0d5fa2f55413cdfb9144bb30adbe7595864d3454158e085f3efaea53fc5d072；规范化数据库content_hash **85d99dd7968dcb7af40f256ef05609074d63e2ab7b8ded76d34a73844aeeab52**。原v1 JSON另留ignored history，数据库历史不可覆盖。
+- 离线真实数据验收 `tmp/validate-gd-revision.py check`：副本追加v2、同内容幂等、99指标无重复、分产品收入合计/毛利、累计减半年等于单季、非经常差额、现金减资本开支、三情景Decimal计算与导出均通过；其他研究/配置/业务表指纹不变，完整性ok。初次验收把北京时间12点预期为v1而失败，实际v1在12:34建立，正确应为空；修正验收同时检查12点为空、14点为v1，未修改业务实现或历史时点。`apply-local`在独立本地备份后成功，仅兆易追加v2，其余内容指纹保持。
+- 完整离线 `.venv/Scripts/python.exe -m pytest`：**745 passed, 1 skipped in153.27s**；skip仍为Windows真实Linux软链接用例。本轮仅研究数据/文档变化，不新增真实资料测试fixture，未将此前Linux运行冒充本轮重跑。
+- 实际生产副本演练 `tmp/publish-gd-revision.py rehearse`：使用现有schema5备份、网络none/只读容器隔离导入单公司v2，旧历史与其他数据指纹保留、幂等/完整性通过，总研究版本6→7。随后 `import-research`在deploy.lock及正式备份 `/srv/stock-watch/shared/data/backups/pre-research-import-20261103T145944049378Z.db` 后导入**同一份**研究，返回v2及同content_hash，其他公司/成员配置/seen/outbox/模型使用记录保持；导出报告同步原持久目录，不重建或重启app/worker。
+- `tmp/check-gd-portal.py`通过真实HTTPS认证读回：兆易当前页15source anchors/99指标行且含新版结论，version=1仍1来源/6指标；未登录与退出后隐藏研究数据。只输出数量/布尔，不记录登录密码、Cookie或成员页面正文。该验收是HTTP读回，未称真实浏览器视觉验收。
+- `tmp/deploy-current.py status`：生产仍业务SHA017c2ae…/原镜像、schema5/DELETE/integrity ok；app/worker healthy，UID10001/只读根，15:00:27Z正常心跳，近10分钟错误0。全局配置d492eb01…、成员配置/审计cec5fb02…、环境897f484f…及监控原值均不变；6公司/6证券/7研究版本，sent87、model_usage275，pending通知/候选/管理任务0。本轮没有强制新闻扫描、付费模型或真实投递。
+- `RESEARCH_BASELINE.md`新增深度研究交付标准，明确其他五家仍是初始材料，PLAN同步当前范围；原始研究/SQLite/备份继续留持久data且不进Git/镜像。文档提交使用skip ci，避免无业务变动的镜像部署。
