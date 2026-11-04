@@ -564,3 +564,18 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - `tmp/check-gd-portal.py`通过真实HTTPS认证读回：兆易当前页15source anchors/99指标行且含新版结论，version=1仍1来源/6指标；未登录与退出后隐藏研究数据。只输出数量/布尔，不记录登录密码、Cookie或成员页面正文。该验收是HTTP读回，未称真实浏览器视觉验收。
 - `tmp/deploy-current.py status`：生产仍业务SHA017c2ae…/原镜像、schema5/DELETE/integrity ok；app/worker healthy，UID10001/只读根，15:00:27Z正常心跳，近10分钟错误0。全局配置d492eb01…、成员配置/审计cec5fb02…、环境897f484f…及监控原值均不变；6公司/6证券/7研究版本，sent87、model_usage275，pending通知/候选/管理任务0。本轮没有强制新闻扫描、付费模型或真实投递。
 - `RESEARCH_BASELINE.md`新增深度研究交付标准，明确其他五家仍是初始材料，PLAN同步当前范围；原始研究/SQLite/备份继续留持久data且不进Git/镜像。文档提交使用skip ci，避免无业务变动的镜像部署。
+
+## 2026-11-04 09:16 阿里巴巴/中芯国际深度研究第2版
+
+- 操作者要求继续按兆易标准更新阿里与中芯。沿用Data研究证据/口径核验和现有十部分档案格式；三位gpt-6.1-sol并行做公司财务、行业竞争及交叉审查，root组装/图像抽核/计算/归档。没有新增业务代码或将研究接入实时AI提醒。
+- 阿里：10项来源、127项去重结构化原始指标、43条分类型陈述、8假设/10映射。公司六月2026季（CYQ2/FY2027Q1）、2026三月季及FY2024—2026、SEC 20-F，辅以腾讯/百度/京东原始业绩、NBS消费及官方模型产品价目。新分部与2025六月重列同期比较，年度旧结构另列；CMR收入抵减与管理层同口径值、总capex与公司FCF资格现金支出、GAAP/non-GAAP、股权支付及回购后股数净增分开。六月EBITA桥397.49+56.28−138.61−41.87=273.29亿元，扣非现金SBC/摊销/减值等至GAAP经营151.61亿元；FCF六月22945−67660+45=−44670百万元、FY26 76213−122021−874+73=−46609百万元。回购实际支付与年度普通股净增不混淆。
+- 中芯：8项来源、143指标、42条陈述、8假设/10映射。2024/2025全年和2025Q2/2026Q1/Q2 IFRS美元与2026H1 CAS人民币独立序列，辅以TSMC/UMC正式Q3、PC/汽车需求及历史BIS原件。明确全部收入地域与晶圆应用分母、标准8英寸/12英寸等效、12英寸非先进节点、总折旧含制造折旧、集团/归母/少数与联营投资收益。核实半年末无用途受限资金、一年内债务约351.15亿元、中芯北方收购已执行及新增发行股、中芯南方40.90%凭董事会控制并表、少数注资与银行融资区别。
+- 关键原件缓存于ignored `data/research/sources/{alibaba,smic}/`，数据/源manifest与三份审查在`data/research/working/`。root用pdftoppm/view_image抽核阿里六月p7分部利润桥及p25 FCF，中芯CAS p7半年数据及p25资产负债/受限资金。采纳审查修正：百度内部管理账未经审计、UMC表述不泛化为全行业；中芯中国90.2%为全部收入地域，出货×价格限定晶圆业务；阿里股份支付桥明确非现金项，防重复扣除。
+- 未可验证材料保留缺口：美团Q2官方PDF 403未读取正文不填经营值；华虹发行主体/范围未闭环未纳入；上交所业绩会预告URL两次得到gzip/HTML而非PDF，未作为已核源或据此填写精确日历；BIS2024公告/补贴征求意见稿明确历史非当前全量规则。模型客户ROI、即时零售独立补贴和中芯先进节点/良率等未知不补造。没有使用尚未披露九月季度实际值。
+- 内部情景建立于11月4日，明确是季后披露前核验而非季初预测。阿里分部EBITA压力结果179.03/276.11/380.21亿元，OCF减总capex另测、不是公司FCF；中芯Q3原管理层收入环比2%–4%/毛利26%–28%指引与内部压力分开，未推无依据归母。估值提供条件敏感性与价格反算方法，缺同期行情/最新稀释数/事前共识，expectation_comparison及validated_prediction继续false。
+- 实际 `.venv/Scripts/python.exe tmp/build-two-baselines.py`：as_of=2026-11-04T01:12:54.617052Z。规范content_hash阿里**330578fadce9c37a5b6d51ff97599303e9aeef8326a695130575bf0cd410cab8**；中芯**9815a5d95034fe0119fd82366c9efa5f4d720432cd34c4fca9ce293d5e3a7320**。原v1另存history且数据库保留，其他公司文件未改。
+- 完整离线 `.venv/Scripts/python.exe -m pytest -q --tb=short`：**745 passed, 1 skipped in175.81s**，Windows真实Linux软链接用例仍skip；本轮不重跑此前Linux结果或声称已运行新CI。`tmp/two-revision-ops.py check`核去重、FCF/利润/归母少数/折旧包含等Decimal等式、历史可得时点、v2追加与幂等、其他表及其他公司指纹、完整性/导出；`apply-local`在备份后通过。没有真实资料fixture或外部网络测试。
+- `tmp/two-revision-ops.py rehearse`：生产真实副本、网络none/只读隔离容器，两个v2同内容导入通过，总版本7→9；正式`import-research`在deploy.lock及备份`/srv/stock-watch/shared/data/backups/pre-research-import-20261104T011443443439Z.db`后成功，返回相同content_hash。事务内核其他研究/原历史、配置/审计/seen/outbox/model_usage指纹保留，研究导出同步原持久目录，未重启/重建服务。
+- `tmp/check-two-portal.py`真实HTTPS认证读回通过：9988.HK当前10来源/127指标、688981.SH当前8来源/143指标，均有v1/v2链接，历史各1来源/8指标；退出和未登录隐藏研究，health/ready code0同SHA。只输出数量/布尔，未记录凭据/Cookie/私密页面；HTTP验收不称浏览器视觉验收。
+- `tmp/deploy-current.py status`：业务仍017c2ae…/原镜像、schema5/DELETE/integrity ok，6公司6证券9版本，app/worker healthy、UID10001/只读根，01:15:32Z心跳、近10分钟错误0。当前成员配置/审计0c7da39a…在本轮08:55取证时已不同于昨日，更新后保持当前值；全局d492eb01…及环境897f484f…不变。既有监控09:00起自然运行，sent90→91、模型275→281及5 pending候选为自然业务变化，不伪称全任务期间静止，也没有为研究验收额外调用模型/扫描/发送。仅更新研究数据，未清理这些队列或扩充收件人。
+- PLAN/RESEARCH_BASELINE同步三家深度基线与剩余三家范围，文档提交skip ci；研究/SQLite/原件/备份保持ignored data，不进Git或镜像。
