@@ -1,8 +1,8 @@
 # 实施计划
 
-## 资讯采集与基线分析（2026-11-05本地实现及离线验收完成，待发布）
+## 资讯采集与基线分析（2026-11-05已发布，待自然效果观察）
 
-操作者已要求实现以下两项。当前代码及离线回放完成，824 passed/1 skipped；正式库副本在禁网隔离容器中验证schema5、全部业务表及研究历史保持。现有生产版本尚待本轮发布，订阅、监控开关与token上限不因本次改造调整。行为及验收边界见[实现说明](NEWS_RESEARCH_INTEGRATION.md)，诊断依据见[研究与推送断点诊断](RESEARCH_ALERT_GAP.md)。
+以下两项已随a9a680d…经[自动流程](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/42031811058)发布。Windows完整824 passed/1 skipped，Linux825 passed；正式库禁网副本保留schema5/全部业务表，生产备份与健康验收通过，9个相关模块哈希一致。订阅、监控开关、研究历史与token上限未变。新token及实际收件质量待自然监控时段观察。行为及验收边界见[实现说明](NEWS_RESEARCH_INTEGRATION.md)，诊断依据见[研究与推送断点诊断](RESEARCH_ALERT_GAP.md)。
 
 ### 1. 调整股票资讯采集：证券关联资讯为主，关键词搜索补充
 

@@ -631,3 +631,10 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 单独手动公开采集验收（非pytest）：兆易13条/2全文/associated_complete，阿里46条/2全文；阿里人为max_pages=3正确报告partial，未假称完整。结果在ignored data/research/working/source-client-acceptance-20261105.json，没有付费模型或实际投递。
 - 实际 `.venv/Scripts/python.exe tmp/rehearse-research-alert.py`：正式库mode=ro/query_only备份至服务器专用release-checks目录，现镜像挂当前38业务文件，network=none/只读根/UID10001；init_db及FakeFetcher/FakeAnalyzer dry_run前后schema5、DDL/56表全行指纹9d4554c7…一致，5股票/5研究输入且三家深基线均可比较，9版本保留，queued0、真实新闻/模型/投递0。初次新目录umask077仅修本次隔离目录0755后成功，未改固定部署脚本。当前代码归档hash eadabcd5…与回放一致；脱敏结果留ignored data。
 - 发布前实际 `.venv/Scripts/python.exe tmp/deploy-current.py baseline`：仍017c2ae…/schema5，app/worker健康、错误0，pending通知/候选/管理任务0；成员3804afd0…、全局d492eb01…、环境897f484f…及监控true既有hash固定。自动审批通道曾因账号用量未完成而拒绝执行（非不安全判定），用户要求继续后相同审批通道恢复；未绕过审核。待按既有受限发布链路提交、推送与核验，新真实模型输出/token与收件待自然时段观察，不以本轮假扫描声称效果验收。
+
+### 2026-11-05 21:05 关联资讯与基线分析生产发布验收
+
+- 业务提交a9a680d764f6ac7cfbf37224425ccaaf7d48a0f7已`git push origin main`，[run42031811058](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/42031811058)的test/image/deploy全部success。实际`tmp/github-ops.py test-evidence 127259902652`取得Linux完整 **825 passed in71.81s**，补齐Windows跳过项；镜像为`ghcr.io/qinyinxiaoyun/stockwatcher@sha256:fa39eba439ea8490650167b7d0e773c706ad42938d5d1eb22485ba8e534040bb`。
+- 实际 `.venv/Scripts/python.exe tmp/deploy-current.py verify a9a680d764f6ac7cfbf37224425ccaaf7d48a0f7`：升级前备份pre-image-20261105T130359329396Z.db为schema5/integrity ok；正式库schema5/DELETE/完整性ok，6公司/6证券/9研究版本、成员配置3804afd0…/全局d492eb01…/环境897f484f…均与baseline一致，部署工具928f1fc1…未改。app/worker healthy、UID10001/只读根、新SHA心跳13:04:50Z，近10分钟错误0，公网health/ready均200/code0/同SHA。
+- 实际 `tmp/verify-research-alert-release.py a9a680d…`：线上source、research_context、news、analyzer、quality、scan、member monitor、cli、delivery共9模块规范换行hash与本地一致；证券关联源已接入、prompt5/schema3。sent100/model_usage359、待发送/候选/管理任务0保持，监控原true及预算未调整；本轮未强制扫描、付费模型或实际试发。当前已过日内监控时段，新token、模型输出和手机收件需下一自然时段核实，不声称已完成效果验收。
+- 本轮暂存19个任务文件，将并行云端研究计划在PLAN/PROGRESS的段落及RESEARCH_CLOUD_PLAN.md留在工作区，未混入业务发布、覆盖或实现。后续只提交本次发布记录与架构说明并带skip ci，不重新构建镜像；不因文档HEAD变化误报业务版本。

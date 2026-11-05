@@ -1,6 +1,6 @@
 # 股票关联资讯与研究增量分析
 
-2026-11-05实现。当前发布与测试证据以PROGRESS.md为准；本文件说明实现行为，不将离线模型回放视为真实分析效果验收。
+2026-11-05 21:05（北京时间）完成生产发布验收，业务SHAa9a680d764f6ac7cfbf37224425ccaaf7d48a0f7，[自动流程](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/42031811058)成功。Windows824 passed/1 skipped、Linux825 passed，schema5及9份研究历史保留；生产9模块哈希/健康/备份/配置指纹均核对通过。发布与测试详情见PROGRESS.md；离线模型回放不代替真实分析效果验收，新token与实际收件质量待自然监控观察。
 
 ## 股票资讯采集
 
