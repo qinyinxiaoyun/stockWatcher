@@ -1,6 +1,6 @@
 # 云端研究更新接口与配置
 
-本地代码支持三个研究工具、HTTP接口、worker更新、历史归档和网页状态。**本轮不创建或启用定时任务，也未部署到生产**。执行计划见 [RESEARCH_CLOUD_PLAN.md](RESEARCH_CLOUD_PLAN.md)；未来时间保留为周一至周五05:00、Asia/Shanghai。
+三个HTTP接口、worker更新、历史归档和网页状态已于2026-11-05部署生产，业务版本6a21afa、schema6。生产已开启受限REST接口及正式保存开关，三家公司dry-run回执已验证，未制造新研究版本。**ChatGPT网页云端定时任务尚未创建**：等待Auth0租户和用户授权，MCP服务尚未启用。执行计划见 [RESEARCH_CLOUD_PLAN.md](RESEARCH_CLOUD_PLAN.md)，任务正文见 [RESEARCH_DAILY_PROMPT.md](RESEARCH_DAILY_PROMPT.md)，连接清单见 [RESEARCH_AUTH0_SETUP.md](RESEARCH_AUTH0_SETUP.md)。时间为周一至周五05:00、Asia/Shanghai。
 
 ## 运行与迁移
 
@@ -81,7 +81,7 @@ RESEARCH_MCP_POLICY_FILE=/data/research/oauth/policy.json
 
 提供方需为上述resource颁发access token并提供标准OAuth发现、授权码/PKCE、客户注册及刷新/撤销能力。ChatGPT连接使用其管理页给出的实际redirect URI，不能猜回调地址或把网页会话当OAuth。工具声明分别为只读/写入，写工具权限按真实平台能力授权，不以只读标注或匿名写绕过。
 
-本地离线SDK测试覆盖真实HTTP传输、资源发现、签名令牌、三工具往返、scope/主体/受众/期限校验、撤权/公钥更新与畸形JSON。尚无目标账号和提供方配置，因此外网连接、OAuth账号绑定及无人值守持续写入仍待后续验收。
+本地离线SDK测试覆盖真实HTTP传输、资源发现、签名令牌、三工具往返、scope/主体/受众/期限校验、撤权/公钥更新与畸形JSON。生产REST快照、提交及回执已通过；用户选择ChatGPT网页任务并确认需要新建OAuth服务，Auth0租户注册仍待完成，因此外网MCP连接、OAuth账号绑定及无人值守持续写入仍待验收。
 
 ## 检查与排障
 
@@ -89,4 +89,4 @@ RESEARCH_MCP_POLICY_FILE=/data/research/oauth/policy.json
 
 导出包含跨进程非阻塞目录锁与一致读快照，逐文件原子替换，索引最后写；保留调用方事务。备份与远程研究均不占数据库写事务。
 
-工程验收必须全离线；真实云端账号连接、生产迁移/新镜像/代理配置与定时任务创建分别登记。操作者已明确本轮不创建定时任务，不能因计划中的05:00自行启用。
+工程验收必须全离线；真实云端账号连接、生产迁移/新镜像/代理配置与定时任务创建分别登记。操作者后续已授权部署及创建任务；生产REST已部署，定时任务因账号与连接尚缺而未创建，不能将本地自动化或计划中的05:00冒称云端已运行。

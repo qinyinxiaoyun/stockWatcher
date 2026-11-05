@@ -1,0 +1,49 @@
+# Auth0托管授权配置清单（尚未执行）
+
+研究资源：`https://stock.janettepa.uk/mcp/research`。本文件只记录核实后的配置；没有创建租户、应用、密钥或云端任务。
+
+## 操作者最少步骤
+
+1. 注册Auth0并建立租户，告知租户域名即可，不发送密码或密钥。
+2. 助手启动CLI设备登录后，在官方verification URL核对设备码并登录批准管理权限。此步骤不可免交互；这是管理员登录，不是研究用户身份。
+3. 最后在ChatGPT网页创建/连接研究MCP并以专用研究用户完成授权，确认读写及无人值守刷新。助手可配置API，但不能替代用户登录或同意。
+
+## CLI取得及信任校验
+
+官方CLI支持Windows/macOS/Linux，入口 https://auth0.github.io/auth0-cli/ ，发行包仅从 https://github.com/auth0/auth0-cli/releases 获取，选择明确固定稳定版本与匹配系统架构。Windows使用Windows_x86_64.zip，其他系统取对应Darwin/Linux架构包。不要执行网络下载脚本管道。
+
+执行前比较官方同版本checksum文件与本地SHA256；若发行物提供发布者签名或GitHub构建attestation，核对其身份绑定auth0/auth0-cli及固定版本。普通checksum不能冒称签名。本轮未下载或执行CLI，具体取得方式在账号就绪后按实际稳定版本核实。
+
+## 已核实命令参数（供助手执行，当前未执行）
+
+官方CLI文档支持：
+
+```text
+auth0 login --agent-mode --scopes "read:resource_servers,create:resource_servers,update:resource_servers,read:clients,create:clients,update:clients,read:tenant_settings,update:tenant_settings,read:users"
+auth0 tenants list
+auth0 apis create --tenant <已核对租户> --name stockWatcher-research --identifier https://stock.janettepa.uk/mcp/research --scopes "research:read,research:write" --token-lifetime 3600 --offline-access=true --signing-alg RS256 --no-input
+```
+
+agent-mode设备登录输出URL/code JSON并等待人批准，随后设默认租户。登录scope能否获批取决于账号角色；操作前检查选中租户与已有API，避免重复创建。CLI的默认管理scope可能更广，不能把额外scope列表称精确最小权限。通用Management API可经CLI `auth0 api`调用；使用前按实际安装版本help/schema核对方法与文件参数，不凭空假定tenant设置字段。
+
+## Dashboard或Management API配置
+
+- API identifier精确等于上述资源，不补尾斜杠；RS256；access token最长3600秒，browser-flow lifetime也不得超3600；允许Offline Access；定义research:read和research:write。
+- Tenant Settings > Advanced > Settings开启Resource Parameter Compatibility Profile。Auth0官方明确：MCP用resource而非audience时，未开启会回退userinfo audience并失败。必须测试authorize和token请求的resource兼容，不靠设置名推断成功。
+- 优先使用ChatGPT管理页实际给出的静态OAuth client配置能力；精确登记其真实redirect URI，不猜测。用户授权流使用authorization_code及PKCE S256，启用refresh_token，申请openid offline_access research:read research:write。public client token endpoint auth method为none；若ChatGPT明确要求confidential client，按其实际支持方式配置，不混用client secret与public client。
+- 若ChatGPT仅支持动态注册，才按实际兼容性开启Auth0 Dynamic Client Registration；该开关允许任何人注册应用，必须使用专用租户、用户白名单和明确同意，不能把DCR注册等同授权访问。不要为研究用户错误建立client_credentials替代交互授权。
+- 配置Refresh Token Rotation、期限及复用检测，确认客户端每次持久化新refresh token；API允许offline access还不够，客户端还必须请求offline_access。需要实测跨access-token过期刷新，而非只测首次连接。
+- 专用研究用户可用已有登录连接建立；管理账号device登录的subject不能当研究用户subject。通过研究登录后经验证签名的access token sub或租户Users的user_id取得实际subject。仅将该值写入受保护的持久policy文件，不打印完整token或用户敏感资料。
+- 从租户HTTPS OIDC discovery核对issuer及jwks_uri，获取公开JWKS，核对RS256、RSA至少2048位及kid，写入服务器受保护持久文件。issuer包含其实际尾斜杠，必须与token一致；不要根据JWT中的任意URL抓取密钥。生产定期更新JWKS须采用已有受控流程。
+
+服务器配置RESEARCH_MCP_ISSUER、RESEARCH_MCP_RESOURCE、RESEARCH_MCP_JWKS_FILE、RESEARCH_MCP_POLICY_FILE；policy只允许研究用户subject。先读、再dry-run写、再正式写，核实主体隔离、scope、audience、最长1小时、刷新、撤权与回执。研究HTTP Bearer不能用来冒充OAuth。
+
+## 官方依据
+
+- https://auth0.github.io/auth0-cli/auth0_login.html
+- https://auth0.github.io/auth0-cli/auth0_apis_create.html
+- https://support.auth0.com/center/s/article/mcp-audience-error-with-auth0
+- https://github.com/auth0/docs/blob/master/articles/api-auth/dynamic-client-registration.md
+- https://github.com/auth0/docs/blob/master/articles/tokens/guides/get-refresh-tokens.md
+
+尚未验证：租户实际权限/套餐、CLI发布物签名、ChatGPT客户端登记方式与回调、refresh rotation互操作、实际研究用户subject和生产JWKS。
