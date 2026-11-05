@@ -28,22 +28,54 @@ def render_payload(payload):
                           f"影响方向：{analysis['impact']}",
                           f"经营影响：{_brief(analysis['reason'], 180)}",
                           f"待核实：{_brief(analysis.get('followup', ''), 80)}"])
+            lines.extend(_research_lines(analysis, item.get('research_context') or article.get('research_context')))
         lines.extend([f"来源：{article['url']}", f"配置 v{payload.get('config_version', '?')}"])
         return "\n".join(lines)
     article, analysis = payload["article"], payload["analysis"]
     targets = payload.get("target_names") or article.get("target_keys", [])
+    research = _research_lines(analysis, article.get('research_context'))
+    research_text = '\n'.join(research) + '\n' if research else ''
     return ("AI 自动新闻预警，未经独立事实核验。\n"
             f"[{analysis.get('level', '重要')}] {'、'.join(targets)}\n{article['title']}\n"
             + '\n'.join(_source_times(payload)) + '\n'
             f"影响方向：{analysis.get('impact', analysis.get('sentiment', '不确定'))}\n"
             f"经营影响：{_brief(analysis.get('reason', analysis.get('summary', '')), 180)}\n"
             f"待核实：{_brief(analysis.get('followup', ''), 80)}\n来源：{article['url']}\n"
+            f"{research_text}"
             f"配置 v{payload.get('config_version', '?')}")
 
 
 def _brief(value, limit):
     text = ' '.join(str(value or '').split())
     return text if len(text) <= limit else text[:limit - 1] + '…'
+
+
+def _research_lines(analysis, context=None):
+    """Present frozen per-target research metadata without re-reading the DB."""
+    lines = []
+    kind = {'industry': '行业信号', 'market_context': '行情原因背景'}.get(analysis.get('analysis_kind'))
+    if kind:
+        lines.append('分析类型：' + kind)
+    if context is not None:
+        reference = context.get('baseline_ref') or {}
+        if reference:
+            lines.append('研究基线：v' + str(reference.get('version', '?')) + '（材料截止' + str(reference.get('as_of', '待核'))[:10] + '）')
+        if not context.get('comparison_available'):
+            reason = ('缺少事件前可用基线，当前研究仅作背景' if context.get('status') == 'background_only'
+                      else '研究部分可用，不能作完整基线比较' if context.get('baseline_status') == 'partial' or context.get('status') == 'partial'
+                      else '暂无可比较的研究资料，按本次证据判断')
+            lines.append('基线比较：证据不足；' + reason)
+        else:
+            effect = {'supports': '支持原判断', 'weakens': '削弱原判断', 'unchanged': '尚不改变原判断', 'insufficient': '证据不足'}.get(analysis.get('research_effect'), '证据不足')
+            detail = _brief(analysis.get('baseline_comparison', ''), 180)
+            lines.append('基线比较：' + effect + ('；' + detail if detail else ''))
+        if context.get('review_required') or context.get('baseline_status') == 'needs_update' or context.get('status') == 'needs_update':
+            lines.append('研究状态：待更新，结论须复核')
+    elif analysis.get('baseline_comparison'):
+        lines.append('基线比较：证据不足；' + _brief(analysis['baseline_comparison'], 180))
+    if analysis.get('counter_evidence'):
+        lines.append('反证与局限：' + _brief(analysis['counter_evidence'], 100))
+    return lines
 
 
 def _source_times(payload):

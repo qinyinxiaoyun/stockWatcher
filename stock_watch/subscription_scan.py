@@ -24,6 +24,10 @@ from .subscription_monitor import _article_dict, _digest, _read_article, article
 
 
 def _fetch_target(service, target, now):
+    # A security-associated source already supplies the relationship. Its own
+    # explicitly unsupported/failed-source fallback handles keyword queries.
+    if getattr(service.fetcher, 'security_associated', False) and target.kind == 'stock':
+        return service.fetcher.fetch_target(target, now=now)
     selected = select_queries(target, now) if isinstance(service.fetcher, EastmoneyNewsClient) else target
     if selected == target:
         return service.fetcher.fetch_target(target, now=now)
@@ -41,6 +45,18 @@ def _fetch_target(service, target, now):
 def _combine(first, second):
     """One report can have different snippets and independent related targets."""
     best = first if len(first.summary) >= len(second.summary) else second
+    full = {'full_text', 'full_text_truncated'}
+    first_full = getattr(first, 'evidence_status', '') in full
+    second_full = getattr(second, 'evidence_status', '') in full
+    if first_full != second_full:
+        best = first if first_full else second
+    elif first_full and second_full:
+        # A shorter verified refresh may contain a correction. Length alone
+        # must not permanently preserve superseded facts.
+        previous = getattr(first, 'evidence_checked_at', '')
+        incoming = getattr(second, 'evidence_checked_at', '')
+        if incoming and (not previous or parse_published_at(incoming) >= parse_published_at(previous)):
+            best = second
     return replace(best, published_at=min(first.published_at, second.published_at),
                    target_keys=tuple(sorted(set(first.target_keys) | set(second.target_keys))),
                    legacy_keys=tuple(sorted(set(first.legacy_keys) | set(second.legacy_keys))))
@@ -70,7 +86,11 @@ def _task_key(service, article, target, member, observation=None):
     # keeps unproven similarities report-scoped; distinct targets/focus/privacy
     # still enter the existing analysis specification independently.
     identity = (observation.event_id, observation.change_id) if observation else event_identity(article, target)
-    content = _digest([service.source_namespace, *identity])
+    context = getattr(article, 'research_context', None) or {}
+    specification = [service.source_namespace, *identity]
+    if context.get('fingerprint'):
+        specification.append(context['fingerprint'])
+    content = _digest(specification)
     return service._cache_key(content, target, member)
 
 
@@ -139,7 +159,9 @@ def _fact_article(article, observation):
                    source_published_at=observation.first_public_at)
 
 
-def _analysis_article(article, observation):
+def _analysis_article(article, observation, research_context=None):
+    if research_context is not None:
+        article = replace(article, research_context=research_context)
     if observation is None or not observation.strong_identity or not observation.facts:
         return article
     fields = ('metric', 'period', 'basis', 'unit', 'relation', 'value', 'status')
@@ -389,6 +411,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
     queries, raw, succeeded = {}, [], set()
     subject_names = {}
     event_observations = {}
+    research_contexts, analysis_keys = {}, {}
     def event_target(article, target_id):
         target = queries[target_id]
         text = article.title + '。' + article.summary
@@ -399,6 +422,9 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                         getattr(getattr(service.analyzer, "transport", None), "endpoint", "offline")])
     last_member = None
     try:
+        begin_cycle = getattr(service.fetcher, 'begin_cycle', None)
+        if begin_cycle is not None:
+            begin_cycle()
         if not dry_run:
             transaction(lambda conn: _migrate(service, conn, checkpoint()))
         for scan in scans:
@@ -421,6 +447,13 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                 counts["fetched"] += len(articles)
                 succeeded.add(key)
                 raw.extend(replace(a.with_targets((key,)), legacy_keys=tuple(set((*a.legacy_keys, a.key)))) for a in articles)
+                source_status = getattr(service.fetcher, 'last_fetch_status', {}).get(target.key, ())
+                for code in ([source_status] if isinstance(source_status, str) else source_status):
+                    # Source diagnostics are fixed codes, never response prose.
+                    if code in {'fallback_unsupported_security', 'fallback_associated_unavailable',
+                                'partial_associated_page_error', 'partial_associated_invalid_record',
+                                'partial_associated_page_limit'}:
+                        errors.append('fetch: ' + code)
             except Exception as exc:
                 errors.append("fetch: " + type(exc).__name__)
         pool = {}
@@ -441,6 +474,9 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     for target_id in article.target_keys:
                         if target_id in queries:
                             register_event(conn, article, event_target(article, target_id), checkpoint())
+                acknowledge = getattr(service.fetcher, 'acknowledge', None)
+                if acknowledge is not None:
+                    acknowledge(conn, checkpoint())
             transaction(save)
             with open_connection(service.db) as conn:
                 rows = conn.execute("""SELECT a.*,q.revision_key AS current_revision FROM subscription_articles a
@@ -537,11 +573,18 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
         for offset in range(max((len(c) for c in candidates), default=0)):
             ordered.extend((scan, rows[offset]) for scan, rows in zip(scans, candidates) if offset < len(rows))
         needed, cache = {}, {}
-        for scan, (key, article, targets, decision, timing) in ordered:
-            for target in targets:
-                cache_key = _task_key(service, article, target, scan.member, event_observations.get((key, target.key)))
-                analyzed_article = _analysis_article(article, event_observations.get((key, target.key)))
-                needed.setdefault(cache_key, []).append((scan, analyzed_article, target, decision))
+        from .research_context import select_context
+        with open_connection(service.db) as conn:
+            for scan, (key, article, targets, decision, timing) in ordered:
+                for target in targets:
+                    pair = (key, target.key)
+                    if pair not in research_contexts:
+                        research_contexts[pair] = select_context(
+                            conn, getattr(target, 'symbol', ''), article, checkpoint())
+                    analyzed_article = _analysis_article(article, event_observations.get(pair), research_contexts[pair])
+                    cache_key = _task_key(service, analyzed_article, target, scan.member, event_observations.get(pair))
+                    analysis_keys[(scan.member.id, *pair)] = cache_key
+                    needed.setdefault(cache_key, []).append((scan, analyzed_article, target, decision))
         if needed:
             with open_connection(service.db) as conn:
                 keys = list(needed)
@@ -679,6 +722,15 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                                 return False
                             conn.execute("INSERT INTO subscription_analysis VALUES (?,?,?) ON CONFLICT(cache_key) DO UPDATE SET result_json=excluded.result_json,created_at=excluded.created_at",
                                 (cache_key, json.dumps(outcome.to_dict(), ensure_ascii=False), _iso(checkpoint())))
+                            # Preserve the exact public research excerpt even
+                            # when the conclusion is not eligible to notify.
+                            # Personal focus remains in its existing isolated
+                            # analysis key, never copied to shared research.
+                            context = getattr(article, 'research_context', None)
+                            if context is not None:
+                                conn.execute("INSERT INTO monitor_state VALUES (?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at",
+                                    ('analysis-context-v1:' + cache_key,
+                                     json.dumps(context, ensure_ascii=False, sort_keys=True), _iso(checkpoint())))
                             jobs.succeed(conn, cache_key, provider, checkpoint())
                             return True
                         if not transaction(save_analysis):
@@ -687,7 +739,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     cache[cache_key] = outcome
                     metrics["analysis_succeeded"] += 1
         for scan, (key, article, targets, decision, timing) in ordered:
-            results = [(target, cache.get(_task_key(service, article, target, scan.member, event_observations.get((key, target.key))))) for target in targets]
+            results = [(target, cache.get(analysis_keys[(scan.member.id, key, target.key)])) for target in targets]
             results = [(target, analysis) for target, analysis in results if analysis is not None]
             if not results:
                 continue
@@ -742,7 +794,8 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                     "analysis_focus": {t.key: list(t.focus) for t, _ in novel},
                     "article": _article_dict(article), "analysis": strongest.to_dict(),
                     "target_names": [t.name for t, _ in novel],
-                    "target_analyses": [{"target_id": t.key, "name": t.name, "analysis": a.to_dict()} for t, a in novel]}
+                    "target_analyses": [{"target_id": t.key, "name": t.name, "analysis": a.to_dict(),
+                                         "research_context": research_contexts.get((key, t.key))} for t, a in novel]}
                 links = {}
                 for target, _ in novel:
                     observation = event_observations.get((key, target.key))
@@ -782,6 +835,7 @@ def run_subscription_scan(service, *, now=None, force=False, dry_run=False, slot
                 for table, column in (("member_evaluations", "evaluated_at"), ("subscription_articles", "published_at"),
                                       ("subscription_analysis", "created_at"), ("member_legacy_seen", "seen_at")):
                     conn.execute(f"DELETE FROM {table} WHERE {column}<?", (cutoff,))
+                conn.execute("DELETE FROM monitor_state WHERE key LIKE 'analysis-context-v1:%' AND updated_at<?", (cutoff,))
                 history = _iso(current - timedelta(days=30))
                 conn.execute("DELETE FROM quality_policy_audit WHERE created_at<?", (history,))
                 conn.execute("DELETE FROM quality_article_observations WHERE observed_at<?", (history,))

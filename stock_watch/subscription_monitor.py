@@ -86,6 +86,9 @@ def _article_dict(article):
             "source": article.source, "target_keys": list(article.target_keys),
             "raw_id": article.raw_id, "legacy_keys": list(article.legacy_keys),
             "time_status": article.time_status,
+            **{name: getattr(article, name) for name in ('evidence_status', 'retrieval_kind', 'evidence_checked_at')
+               if getattr(article, name, None)},
+            **({'research_context': article.research_context} if getattr(article, 'research_context', None) else {}),
             **{name: getattr(article, name).isoformat() if getattr(article, name) else None
                for name in ("source_published_at", "first_seen_at", "last_seen_at")}}
 
@@ -168,8 +171,10 @@ class SubscriptionMonitorService(MonitorService):
         if rule.get("push_level") == "all":
             levels = ("重大", "重要", "普通")
         direction = rule.get("direction", "both")
+        meaningful = (getattr(analysis, "is_fundamental", True) is not False
+                      or getattr(analysis, "analysis_kind", "company") in {"industry", "market_context"})
         return (target.key in analysis.matched_targets and analysis.should_notify
-                and getattr(analysis, "is_fundamental", True) is not False and analysis.level in levels and
+                and meaningful and analysis.level in levels and
                 (direction == "both" or
                  direction == "positive" and analysis.impact == "利好" or
                  direction == "negative" and analysis.impact == "利空"))

@@ -35,6 +35,7 @@ class NewsTarget:
     focus: tuple[str, ...] = ()
     effective_at: datetime | None = None
     kind: str = "stock"
+    symbol: str = ""
 
     @classmethod
     def from_value(cls, value: str | Mapping[str, Any]) -> "NewsTarget":
@@ -69,6 +70,7 @@ class NewsTarget:
             focus=focus,
             effective_at=effective_at,
             kind=kind,
+            symbol=str(value.get("symbol") or "").strip().upper(),
         )
 
 
@@ -94,6 +96,10 @@ class NewsArticle:
     # Derived by the local event layer for analysis only; never source identity
     # or a replacement for the archived raw article.
     fact_context: Mapping[str, Any] | None = None
+    research_context: Mapping[str, Any] | None = None
+    evidence_status: str = "snippet"
+    retrieval_kind: str = "search"
+    evidence_checked_at: str = ""
 
     def with_targets(self, keys: Iterable[str]) -> "NewsArticle":
         merged = tuple(sorted(set(self.target_keys).union(keys)))
@@ -256,7 +262,7 @@ def normalize_article(item: Mapping[str, Any], target: NewsTarget) -> NewsArticl
     if not title:
         raise ValueError("article title is missing")
     url = str(
-        _first(item, "url", "Url", "link", "articleUrl", "ArticleUrl", "Art_UniqueUrl")
+        _first(item, "url", "Url", "link", "articleUrl", "ArticleUrl", "Art_UniqueUrl", "Art_Url", "Art_OriginUrl")
         or ""
     ).strip()
     raw_id_value = _first(item, "id", "code", "articleId", "ArticleID", "Art_Code")

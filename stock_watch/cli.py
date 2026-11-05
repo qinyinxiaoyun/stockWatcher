@@ -127,8 +127,9 @@ class FakeSender:
 def monitor_service(settings, *, fake=False, db=None):
     from .analyzer import DeepSeekAnalyzer, DeepSeekHTTPTransport, FakeAnalyzer
     from .monitor_router import MonitorRouter
-    from .news import EastmoneyNewsClient
-    fetcher = FakeFetcher() if fake else EastmoneyNewsClient(timeout=settings.news_timeout_seconds)
+    from .stock_news import EastmoneyStockNewsClient
+    fetcher = FakeFetcher() if fake else EastmoneyStockNewsClient(
+        database=db or settings.database_path, timeout=settings.news_timeout_seconds)
     analyzer = FakeAnalyzer() if fake else DeepSeekAnalyzer(
         DeepSeekHTTPTransport(settings.deepseek_api_key, settings.deepseek_url),
         model=settings.deepseek_model, timeout=settings.model_timeout_seconds,

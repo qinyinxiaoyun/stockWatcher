@@ -222,6 +222,7 @@ _FUNDAMENTAL = re.compile(
 )
 _URGENT = re.compile(r"违约|破产|清算|停产|重大事故|被立案|立案调查|欺诈|财务造假|盈利预警|业绩暴雷|订单.{0,12}(?:撤销|取消)|(?:撤销|取消).{0,8}订单|重大诉讼|出口禁令")
 _DISCLOSURE = re.compile(r"公告|披露|宣布|通报|发布|获悉|确认|决定|发生|更正")
+_MARKET_CAUSE = re.compile(r"原因|因何|为何|催化|预期差|风险偏好|不确定性|消息面|降息|加息|利率|选举|停火|谈判|受.{0,16}(?:提振|影响)")
 _NOISE_PATTERNS = (
     ("flow_daily", re.compile(r"(?:港股通|南向|北向|南北向|沪股通|深股通).{0,40}(?:净买入|净卖出|净买卖|净流入|净流出)")),
     ("margin_daily", re.compile(r"(?:融资余额|融券余额|融资融券|融资净买入|融资净偿还|融资买入额|两融日报)")),
@@ -238,6 +239,11 @@ def classify_article(article: NewsArticle) -> ContentDecision:
     urgent = fundamental and bool(_URGENT.search(text))
     if fundamental:
         return ContentDecision("fundamental", "operating_fact", urgent)
+    if _MARKET_CAUSE.search(text):
+        # Explanations of material market moves deserve analysis even when no
+        # issuer operating result changed. Routine price/flow templates still
+        # pass through the existing noise rules below.
+        return ContentDecision("market_context", "market_catalyst")
     for reason, pattern in _NOISE_PATTERNS:
         if pattern.search(title):
             return ContentDecision("market_noise", reason)
@@ -269,7 +275,7 @@ def freshness(article: NewsArticle, now: datetime, backfill: bool = False) -> Fr
     urgent_end = published + timedelta(hours=24)
     if decision.urgent_hint and _DISCLOSURE.search(article.title + article.summary) and now < urgent_end:
         return FreshnessDecision("urgent", urgent_end, "major_disclosure_24h_exception")
-    if morning_start <= now < morning_end and overnight_start <= published <= morning_start and decision.kind == "fundamental":
+    if morning_start <= now < morning_end and overnight_start <= published <= morning_start and decision.kind in {"fundamental", "market_context"}:
         return FreshnessDecision("morning", morning_end, "overnight_operating_fact")
     return FreshnessDecision("expired", normal_end, "source_time_expired")
 
@@ -333,7 +339,67 @@ class QualityStore:
     def __init__(self, conn: sqlite3.Connection):
         self.conn = conn
 
-    def _representative(self, identity: str, existing: sqlite3.Row, article: NewsArticle) -> tuple[NewsArticle, bool]:
+    @staticmethod
+    def _body_stamp(article: NewsArticle, now: datetime) -> datetime | None:
+        if article.evidence_status not in {'full_text', 'full_text_truncated'} or article.time_status != 'trusted':
+            return None
+        try:
+            stamp = parse_published_at(article.evidence_checked_at)
+            return stamp if stamp <= _aware(now) else None
+        except (ValueError, TypeError, OverflowError):
+            return None
+
+    def _body_evidence(self, identity: str, title: str, summary: str, now: datetime) -> Mapping[str, Any] | None:
+        """Resolve metadata only for this exact title and stored representative.
+
+        The generic state table avoids duplicating source text or changing the
+        schema. Subscriber archives provide a fallback for an earlier archive
+        which predates this metadata cache.
+        """
+        tables = {row[0] for row in self.conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        candidates = []
+        if 'monitor_state' in tables:
+            row = self.conn.execute('SELECT value FROM monitor_state WHERE key=?', ('quality-body-v1:' + identity,)).fetchone()
+            if row:
+                try:
+                    value = json.loads(row[0])
+                    if (value.get('title_hash') == _hash(title) and value.get('summary_hash') == _hash(summary)):
+                        candidates.append(value)
+                except (ValueError, TypeError, AttributeError):
+                    pass
+        if not candidates and 'subscription_articles' in tables:
+            rows = self.conn.execute('SELECT article_json FROM subscription_articles WHERE identity_key=? ORDER BY fetched_at DESC LIMIT 20', (identity,))
+            for row in rows:
+                try:
+                    value = json.loads(row[0])
+                    if _clean_text(value.get('title', '')) == title and _clean_text(value.get('summary', '')) == summary:
+                        candidates.append(value)
+                except (ValueError, TypeError, AttributeError):
+                    continue
+        valid = []
+        for value in candidates:
+            candidate = NewsArticle(key=identity, title=title, summary=summary, url='', published_at=now,
+                                    evidence_status=value.get('evidence_status', ''),
+                                    evidence_checked_at=value.get('evidence_checked_at', ''),
+                                    time_status=value.get('time_status', 'trusted'))
+            if self._body_stamp(candidate, now) is not None:
+                valid.append(value)
+        return max(valid, key=lambda value: parse_published_at(value['evidence_checked_at'])) if valid else None
+
+    def _remember_body(self, identity: str, article: NewsArticle, revision: str, now: datetime) -> None:
+        stamp = self._body_stamp(article, now)
+        key = 'quality-body-v1:' + identity
+        if stamp is None:
+            if self.conn.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='monitor_state'").fetchone():
+                self.conn.execute('DELETE FROM monitor_state WHERE key=?', (key,))
+            return
+        self.conn.execute('CREATE TABLE IF NOT EXISTS monitor_state (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT NOT NULL)')
+        value = dict(title_hash=_hash(article.title), summary_hash=_hash(article.summary), revision_key=revision,
+                     evidence_status=article.evidence_status, evidence_checked_at=_iso(stamp), time_status='trusted')
+        self.conn.execute('INSERT INTO monitor_state(key,value,updated_at) VALUES(?,?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value,updated_at=excluded.updated_at',
+                          (key, json.dumps(value, sort_keys=True), _iso(now)))
+
+    def _representative(self, identity: str, existing: sqlite3.Row, article: NewsArticle, now: datetime) -> tuple[NewsArticle, bool]:
         """Keep accepted correction evidence when a later query omits it."""
         prior = self.conn.execute(
             "SELECT title,summary,update_evidence FROM quality_article_revisions WHERE canonical_id=? AND revision_key=?",
@@ -350,7 +416,10 @@ class QualityStore:
                 return article, False
             prior = max(observations, key=lambda row: (bool(_update_evidence(row["summary"])), len(row["summary"])))
         incoming_revision = revision_key(article)
-        old_article = replace(article, title=prior["title"], summary=prior["summary"])
+        body_evidence = self._body_evidence(identity, prior['title'], prior['summary'], now)
+        old_article = replace(article, title=prior["title"], summary=prior["summary"],
+                              evidence_status=body_evidence['evidence_status'] if body_evidence else 'snippet',
+                              evidence_checked_at=body_evidence['evidence_checked_at'] if body_evidence else '')
         old_evidence = (set(_update_evidence(prior["summary"]).split("|")) - {""}) | set(factual_revision_tokens(old_article))
         new_evidence = (set(_update_evidence(article.summary).split("|")) - {""}) | set(factual_revision_tokens(article))
         same_title = article.title == prior["title"]
@@ -358,6 +427,26 @@ class QualityStore:
         new_updates = set(_update_evidence(article.summary).split("|")) - {""}
         old_fact_keys = {json.loads(token)["key"] for token in factual_revision_tokens(old_article)}
         new_fact_keys = {json.loads(token)["key"] for token in factual_revision_tokens(article)}
+        if same_title:
+            incoming_body = self._body_stamp(article, now)
+            prior_body = self._body_stamp(old_article, now)
+            if incoming_body is not None:
+                historical = self.conn.execute('SELECT 1 FROM quality_article_revisions WHERE canonical_id=? AND revision_key=?',
+                                               (identity, incoming_revision)).fetchone()
+                new_date = article.source_published_at or article.published_at
+                reasserted = bool(existing['source_published_at'] and article.time_status == 'trusted'
+                    and _aware(new_date) > parse_published_at(existing['source_published_at'])
+                    and re.search(r'再次更正|再度更正|恢复|重新调整|再次调整', article.title + article.summary))
+                if historical and incoming_revision != existing['revision_key'] and not reasserted:
+                    return old_article, True
+                if prior_body is not None and incoming_body < prior_body:
+                    return old_article, True
+                # A current authoritative body is not an incomplete search
+                # excerpt. It may be shorter and have the same finite revision
+                # key; observing it does not manufacture a new event revision.
+                return article, False
+            if prior_body is not None and incoming_revision == existing['revision_key']:
+                return old_article, True
         if same_title and old_updates and new_updates <= old_updates and new_fact_keys <= old_fact_keys:
             return old_article, True
         if same_title and old_updates and new_updates <= old_updates and new_fact_keys - old_fact_keys:
@@ -404,7 +493,7 @@ class QualityStore:
             existing = self.conn.execute("SELECT * FROM quality_articles WHERE canonical_id=?", (identity,)).fetchone()
             retained_representative = False
             if existing:
-                article, retained_representative = self._representative(identity, existing, article)
+                article, retained_representative = self._representative(identity, existing, article, now)
             observed = _iso(now)
             source_date = _iso(article.source_published_at or article.published_at) if article.time_status != "unknown" else None
             status = article.time_status
@@ -462,6 +551,7 @@ class QualityStore:
                     VALUES(?,?,?,?,?,?) ON CONFLICT(canonical_id,revision_key) DO UPDATE SET
                     title=excluded.title,summary=excluded.summary,update_evidence=excluded.update_evidence""",
                     (identity, revision, article.title, article.summary, _update_evidence(article.summary), observed))
+                self._remember_body(identity, article, revision, now)
             for kind, alias in aliases:
                 self.conn.execute("INSERT OR IGNORE INTO quality_article_aliases(namespace,alias,canonical_id) VALUES(?,?,?)", (namespace + ":" + kind, alias, identity))
             if own_transaction:

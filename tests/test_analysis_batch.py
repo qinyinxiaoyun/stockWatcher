@@ -86,7 +86,7 @@ def test_batch_input_limits_and_shared_prefix():
     with pytest.raises(ValueError):
         analyzer.analyze_batch([tasks(1)[0]]*2)
     prompt = build_batch_prompt(tasks(5))
-    assert prompt.count('你是证券新闻分类器') == 1
+    assert prompt.count('你是证券研究增量分析员') == 1
     assert analyzer.estimate_batch_tokens(tasks(5)) > 6000
     huge = NewsTarget('batch-test','合成企业','合成企业',focus=('字'*100_000,))
     with pytest.raises(ValueError,match='batch_input_limit_exceeded'):
