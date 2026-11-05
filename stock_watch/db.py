@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 
 
 class SchemaVersionError(RuntimeError):
@@ -94,6 +94,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     from .notifications import SCHEMA_SQL as notifications_schema_sql
     from .analysis_jobs import SCHEMA_SQL as analysis_jobs_schema_sql
     from .research import SCHEMA_SQL as research_schema_sql
+    from .research_updates import SCHEMA_SQL as research_updates_schema_sql
 
     conn.executescript(
         """
@@ -312,6 +313,7 @@ def init_db(conn: sqlite3.Connection) -> None:
         + notifications_schema_sql
         + analysis_jobs_schema_sql
         + research_schema_sql
+        + research_updates_schema_sql
         + "\nCOMMIT;"
     )
 

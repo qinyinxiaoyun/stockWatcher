@@ -58,6 +58,21 @@ def _research(conn, symbol, version=None):
     job = conn.execute('SELECT status FROM research_jobs WHERE company_id=?', (company,)).fetchone()
     job_status = job[0] if job else None
     result = empty | dict(job_status=job_status, status=job_status or 'not_started', company_id=company, securities=store.company_securities(company), versions=[{'version': r['version'], 'as_of': r['as_of'], 'created_at': r['created_at']} for r in records], baseline=selected, historical=bool(selected and latest and selected['id'] != latest['id']), latest_version=latest['version'] if latest else None)
+    # These are current operational checks, kept separate from the selected archive.
+    current_update = dict(last_checked=None, last_updated=latest['created_at'] if latest else None,
+                          covered_through=None, gaps=[], task_status=None, export_status=None)
+    if 'research_update_checks' in tables:
+        check = conn.execute('SELECT last_checked,last_updated,covered_through,gaps_json FROM research_update_checks WHERE company_id=?', (company,)).fetchone()
+        if check:
+            current_update.update(last_checked=check[0], last_updated=check[1] or current_update['last_updated'],
+                                  covered_through=check[2], gaps=json.loads(check[3]))
+    if 'research_update_items' in tables:
+        task = conn.execute('SELECT status,receipt_json FROM research_update_items WHERE company_id=? ORDER BY id DESC LIMIT 1', (company,)).fetchone()
+        if task:
+            receipt = json.loads(task[1]) if task[1] else {}
+            current_update.update(task_status=task[0], export_status='exported' if receipt.get('exported') else
+                                  'pending' if task[0] == 'committed_export_pending' else 'not_required')
+    result['current_update'] = current_update
     if selected:
         doc = selected['document']
         result.update(source_count=len(doc.get('sources', [])), financial_period=doc.get('financial_review', {}).get('period'), readiness=selected['readiness'], as_of=selected['as_of'], created_at=selected['created_at'])

@@ -51,3 +51,16 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+  research-mcp:
+    <<: *runtime
+    profiles: ["research-mcp"]
+    ports:
+      - "127.0.0.1:8001:8001"
+    command: ["python", "-m", "stock_watch.research_mcp"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/.well-known/oauth-protected-resource/mcp/research', timeout=3).read()"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

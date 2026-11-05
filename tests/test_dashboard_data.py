@@ -136,3 +136,26 @@ def test_future_schema_unavailable(archive):
     conn.execute('PRAGMA user_version=99999')
     with pytest.raises(Unavailable):
         load_dashboard(settings)
+
+
+def test_current_update_projection_omits_private_queue_fields(archive):
+    settings, conn = archive
+    store = ResearchStore(conn)
+    store.append_baseline(document(), NOW)
+    conn.execute('INSERT INTO research_update_checks VALUES (?,?,?,?,?)', ('example',NOW,NOW,NOW,json.dumps(['<script>gap</script>'])))
+    conn.execute('INSERT INTO research_update_runs VALUES (?,?,?,?,?,?)', ('private-principal','run-secret','digest',NOW,0,NOW))
+    conn.execute("INSERT INTO research_update_items(principal,run_id,company_id,payload_json,status,receipt_json) VALUES (?,?,?,?,?,?)",
+        ('private-principal','run-secret','example','PRIVATE PAYLOAD','committed_export_pending',json.dumps(dict(committed=True,exported=False))))
+    conn.commit()
+    data = load_stock(settings, 'HK:00001')
+    current = data['research']['current_update']
+    assert current['last_checked'] == NOW
+    assert current['covered_through'] == NOW
+    assert current['export_status'] == 'pending'
+    assert 'private-principal' not in json.dumps(data)
+    assert 'PRIVATE PAYLOAD' not in json.dumps(data)
+    conn.execute('DROP TABLE research_update_checks')
+    conn.execute('DROP TABLE research_update_items')
+    conn.execute('DROP TABLE research_update_runs')
+    conn.commit()
+    assert load_stock(settings, 'HK:00001')['research']['baseline']

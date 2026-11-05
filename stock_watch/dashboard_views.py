@@ -77,7 +77,7 @@ def render_overview(view, csrf_token=''):
     body += '</div><h2 id="stocks">股票研究</h2><div class="grid">'
     for s in stocks:
         r = s.get('research',{})
-        body += '<article class="card"><span class="chip">'+_status(r)+'</span><h3><a href="'+e(stock_url(s.get('symbol')))+'">'+e(s.get('name'))+' · '+e(s.get('symbol'))+'</a></h3><p>关注人数 '+e(len(s.get('watchers',[])))+'</p><p class="muted">'+period_label(r)+'<br>研究截止 '+e(local_time(r.get('as_of')))+'</p></article>'
+        body += '<article class="card"><span class="chip">'+_status(r)+'</span><h3><a href="'+e(stock_url(s.get('symbol')))+'">'+e(s.get('name'))+' · '+e(s.get('symbol'))+'</a></h3><p>关注人数 '+e(len(s.get('watchers',[])))+'</p><p class="muted">'+period_label(r)+'<br>材料截止 '+e(local_time(r.get('as_of')))+'</p></article>'
     body += '</div>'
     if not members and not stocks:
         body += '<div class="card">暂无匹配的订阅或研究。可清空搜索后查看全部内容。</div>'
@@ -97,11 +97,25 @@ def render_stock(view, csrf_token=''):
     r = view.get('research',{})
     body = '<a href="/#stocks">← 返回股票研究</a><header><h1>'+e(view.get('name'))+' <small>'+e(view.get('symbol'))+'</small></h1><span class="chip">'+_status(r)+'</span></header>'
     body += _table(r.get('securities',[]), [('symbol','证券'),('market','市场'),('currency','币种')])
+    update = r.get('current_update', {})
+    if update:
+        body += '<section class="card"><h2>当前检查与导出状态</h2>'
+        if r.get('historical'):
+            body += '<p class="muted">以下为当前运行状态，不代表所选历史版本当时的检查结果。</p>'
+        for key, label in [('last_checked','最近检查'),('last_updated','最近实质更新'),('covered_through','覆盖水位')]:
+            body += '<p>'+label+'：'+e(local_time(update.get(key)))+'</p>'
+        statuses = {'queued':'等待处理','running':'处理中','completed':'已完成','validated':'仅校验',
+                    'no_change':'无实质变化','incomplete':'材料不完整','conflict':'版本冲突','failed':'处理失败',
+                    'committed_export_pending':'已入库，等待导出'}
+        body += '<p>最近任务状态：'+e(statuses.get(update.get('task_status'), '暂无任务'))+'</p>'
+        body += '<p>导出状态：'+e({'exported':'已导出','pending':'待恢复导出','not_required':'本次无需导出'}.get(update.get('export_status'),'暂无记录'))+'</p>'
+        gaps = update.get('gaps', [])
+        body += '<p>覆盖缺口：'+(e('；'.join(str(gap) for gap in gaps)) if gaps else '暂无已记录缺口')+'</p></section>'
     baseline = r.get('baseline')
     if not baseline:
         return _page('股票研究',body+'<section class="card"><h2>研究尚待建立</h2><p>该股票已进入关注清单。研究材料完成整理与核验后，将在此展示。</p></section>',csrf_token)
     doc = baseline.get('document',{})
-    body += '<p class="muted">研究截止 '+e(local_time(r.get('as_of')))+' · '+period_label(r)+' · 版本 '+e(baseline.get('version'))+'</p>'
+    body += '<p class="muted">材料截止 '+e(local_time(r.get('as_of')))+' · '+period_label(r)+' · 版本 '+e(baseline.get('version'))+'</p>'
     if r.get('historical'):
         body += '<p class="chip warn">当前查看历史版本</p>'
     body += '<div class="grid">'

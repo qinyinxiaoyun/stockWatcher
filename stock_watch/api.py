@@ -569,6 +569,9 @@ class Application:
             return self._push(environ, start_response)
         if path == "/wecom/callback":
             return self._callback(environ, start_response)
+        if path.startswith("/api/research/"):
+            from .research_http import ResearchHTTP
+            return ResearchHTTP(self.settings, self)(environ, start_response)
         from .dashboard import handles
         if handles(path):
             return self.dashboard(environ, start_response)

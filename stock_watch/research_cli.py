@@ -4,6 +4,9 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
+import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
@@ -128,18 +131,90 @@ def _markdown(record):
     return '\n'.join(lines) + '\n'
 
 
+def _safe_directory(path):
+    path = Path(path).absolute()
+    for parent in (*reversed(path.parents), path):
+        if parent.is_symlink() or (parent.exists() and getattr(parent, 'is_junction', lambda: False)()):
+            raise ValueError('research directory must not contain links')
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def _atomic_text(target, content):
+    if target.is_symlink():
+        raise ValueError('export target must not be a symlink')
+    fd, temporary = tempfile.mkstemp(prefix='.research-', dir=target.parent)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8', newline='') as stream:
+            stream.write(content)
+            stream.flush()
+            os.fsync(stream.fileno())
+        if target.is_symlink():
+            raise ValueError('export target must not be a symlink')
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+
+
+@contextmanager
+def _export_lock(output):
+    # A stable sibling preserves the report-directory artifact contract.
+    lock = output.parent / ('.research-export-' + hashlib.sha256(str(output).encode()).hexdigest()[:24] + '.lock')
+    if lock.is_symlink() or getattr(lock, 'is_junction', lambda: False)():
+        raise ValueError('invalid research export lock')
+    fd = os.open(lock, os.O_CREAT | os.O_RDWR | getattr(os, 'O_NOFOLLOW', 0), 0o600)
+    locked = False
+    try:
+        if os.name == 'nt':
+            import msvcrt
+            if os.fstat(fd).st_size == 0:
+                os.write(fd, b'0')
+            os.lseek(fd, 0, os.SEEK_SET)
+            try:
+                msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+            except OSError:
+                raise RuntimeError('research export busy') from None
+        else:
+            import fcntl
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except OSError:
+                raise RuntimeError('research export busy') from None
+        locked = True
+        yield
+    finally:
+        if locked:
+            if os.name == 'nt':
+                os.lseek(fd, 0, os.SEEK_SET)
+                msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            else:
+                fcntl.flock(fd, fcntl.LOCK_UN)
+        os.close(fd)
+
+
 def _export(store, output):
-    output = Path(output).resolve()
-    output.mkdir(parents=True, exist_ok=True)
+    output = _safe_directory(output)
+    with _export_lock(output):
+        return _export_locked(store, output)
+
+
+def _export_locked(store, output):
     index = ['# 已关注股票研究基线', '', '本地证据归档；没有生成收益概率或目标价。基础研究就绪与预期比较、经过验证的收益预测分别管理。', '', '| 公司 | 证券 | 已核财务期间 | 基础研究 | 当前状态 | 版本 |', '| --- | --- | --- | --- | --- | --- |']
-    records = _current(store)
+    own_snapshot = not store.conn.in_transaction
+    if own_snapshot:
+        store.conn.execute('BEGIN')
+    try:
+        records = _current(store)
+    finally:
+        if own_snapshot:
+            store.conn.rollback()  # read-only snapshot; never commit caller state
     for record in records:
         stem = hashlib.sha256(record['company_id'].encode()).hexdigest()[:24]
         for suffix, content in (('.md',_markdown(record)), ('.json',json.dumps(record['document'],ensure_ascii=False,sort_keys=True,indent=2)+'\n')):
             target = output / (stem + suffix)
             if target.is_symlink():
                 raise ValueError('export target must not be a symlink')
-            target.write_text(content,encoding='utf-8')
+            _atomic_text(target, content)
         doc = record['document']
         review = doc.get('financial_review',{})
         period = review.get('period','待核实') if review.get('latest_available_checked') else review.get('period','最新期') + '待核，已核历史指标见报告'
@@ -147,7 +222,7 @@ def _export(store, output):
     target = output / 'index.md'
     if target.is_symlink():
         raise ValueError('export target must not be a symlink')
-    target.write_text('\n'.join(index)+'\n',encoding='utf-8')
+    _atomic_text(target, '\n'.join(index)+'\n')
     return {'output':str(output),'index':str(target),'companies':len(records)}
 
 

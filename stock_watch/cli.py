@@ -147,6 +147,8 @@ def run_worker(settings, *, once=False, fake=False):
     from .delivery import DeliveryDispatcher
     from .push import WeComClient
     from .worker import run_worker_once
+    from .research_update_worker import ResearchUpdateService
+    research_service = None if fake else ResearchUpdateService(settings)
     if not fake:
         from .model_usage import recover_reservations
         recover_reservations(settings.database_path,
@@ -184,7 +186,7 @@ def run_worker(settings, *, once=False, fake=False):
     heartbeat_thread.start()
     while not stopped.is_set():
         try:
-            result = run_worker_once(service, dispatcher, callback_service=callback)
+            result = run_worker_once(service, dispatcher, callback_service=callback, research_service=research_service)
             if result.monitor and result.monitor.status != "skipped":
                 output(result.monitor)
         except Exception as exc:

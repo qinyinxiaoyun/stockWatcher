@@ -10,7 +10,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 COPY pyproject.toml README.md ./
 COPY stock_watch ./stock_watch
-RUN pip install --no-cache-dir ".[server]"
+RUN pip install --no-cache-dir ".[server,research-mcp]"
 
 RUN mkdir -p /data /app/verification \
     && chown -R 10001:10001 /data /app/verification

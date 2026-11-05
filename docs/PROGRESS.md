@@ -621,6 +621,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 计划写明分页/水位、来源关联保留、旧身份和已通知账本衔接、失败及不支持证券降级；基线/材料版本进入分析规格、相关上下文共享、证据不足降级、正反事实与行情原因区分、实际token观察和具体回放验收。实施先采集后分析，开发/测试/上线/自然效果分别记状态；没有把计划列入当作已实现，也未新增收益预测、交易或独立调度任务。
 - 实际只读执行`git status --short`、`Get-Content`、`rg -n`核对现有计划/证据，编辑三个文档后执行`git diff --check`及计划交叉引用检查。纯计划文档变更，沿用本聊天同业务代码完整离线745 passed/1 skipped回归，不重复测试；未改业务/测试/数据库、生产版本/预算/订阅/开关，未访问生产或调用新闻/模型/投递接口，未提交/推送或部署。
 
+### 同日计划确认：三接口与工作日05:00云端研究更新（待实施）
+
+- 操作者要求将三家公司研究基线云端更新方案写入执行计划，并指定每工作日早上5点。新增RESEARCH_CLOUD_PLAN详细计划及PLAN入口：固定周一至周五05:00、Asia/Shanghai；以星期定义工作日，节假日/调休不另套交易日历。云端是唯一周期触发器，app只HTTP、现有worker处理队列，不新增宿主机cron或本地替代任务。
+- 记录snapshot/submit/status合同、独立研究队列与检查水位、每公司保存前expected_base_hash检查、幂等/租约恢复、无变化不增版、各公司部分成功、DB提交后仅重试导出及网页分离显示检查/实质更新。周一覆盖周末，来源失败不推进完整覆盖水位，纯时间变化不冒充新研究，沿用十部分深度标准。
+- 明确平台接入和无人值守写授权为前置验收；MCP需OAuth，支持秘密变量的云执行环境可走受限HTTPS。已发现当前可用automation_update仅提供本地任务能力，未调用创建，不把本地调度当云端。实际云端任务ID和启用结果待接口、连接及生产验收通过后记录。
+- 操作者分工限定为确认可用云端平台/账号，在连接就绪时完成账号登录和必要授权；已有权限范围内的工程、配置、离线测试、部署和核验由助手完成。无需操作者复制服务器命令、重新确认已指定的时间或在聊天提交凭证。
+- 本轮只编辑上述计划文档并追加本记录；保留工作区其他任务既有业务、测试及文档改动，不提交/推送或部署，不访问生产、调用付费模型或发送消息。实际执行`git status --short`、定点`Get-Content`/`rg -n`、`git diff --check -- docs/PLAN.md docs/PROGRESS.md`与Python3.12标准库文档检查：计划链接、UTF-8、新文档行尾空白及diff检查通过；未对并行业务修改重新运行或宣称通过pytest。
 ## 2026-11-05 股票关联资讯与研究增量分析实施验收
 
 - 操作者要求实现两项计划，随后要求继续。完成stock_news证券关联采集、受限正文补读、research_context时点及相关摘录、提示v5/合同v3、基线比较/反证展示；CLI与唯一worker接入。现有监控/订阅/预算/schema均未改值，没有新增研究调度/交易/收益预测。保留共享工作区另一个云端研究计划的文档改动，提交时单独分离，未实施该独立计划。
@@ -638,3 +645,14 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 实际 `.venv/Scripts/python.exe tmp/deploy-current.py verify a9a680d764f6ac7cfbf37224425ccaaf7d48a0f7`：升级前备份pre-image-20261105T130359329396Z.db为schema5/integrity ok；正式库schema5/DELETE/完整性ok，6公司/6证券/9研究版本、成员配置3804afd0…/全局d492eb01…/环境897f484f…均与baseline一致，部署工具928f1fc1…未改。app/worker healthy、UID10001/只读根、新SHA心跳13:04:50Z，近10分钟错误0，公网health/ready均200/code0/同SHA。
 - 实际 `tmp/verify-research-alert-release.py a9a680d…`：线上source、research_context、news、analyzer、quality、scan、member monitor、cli、delivery共9模块规范换行hash与本地一致；证券关联源已接入、prompt5/schema3。sent100/model_usage359、待发送/候选/管理任务0保持，监控原true及预算未调整；本轮未强制扫描、付费模型或实际试发。当前已过日内监控时段，新token、模型输出和手机收件需下一自然时段核实，不声称已完成效果验收。
 - 本轮暂存19个任务文件，将并行云端研究计划在PLAN/PROGRESS的段落及RESEARCH_CLOUD_PLAN.md留在工作区，未混入业务发布、覆盖或实现。后续只提交本次发布记录与架构说明并带skip ci，不重新构建镜像；不因文档HEAD变化误报业务版本。
+
+### 2026-11-05 云端研究三接口本地实现与离线验收（未创建定时任务）
+
+- 操作者要求按研究云端计划实现代码，并明确先不要创建定时任务。本轮仅在本地实现，未创建/启用云端、本地或宿主机定时任务，未提交/推送、部署或调用生产接口。每周一至周五05:00、Asia/Shanghai仍只是后续计划；保留并行聊天已完成的关联资讯/研究分析发布记录，不混同这两次交付。
+- 新增research_updates持久runs/items/checks，schema5→6迁移保留原成员配置/研究历史/seen/通知证据。实现按调用身份隔离的幂等请求、保存前CAS、公司独立结果、完整覆盖水位和七天回看窗口、研究内容指纹去噪、NO_CHANGE不增版/不刷新as_of、INCOMPLETE不推进水位、持久dry-run及fundamental最低就绪防退化。状态/快照含固定安全报告路径，来源缺失不伪造新研究或预测能力。
+- 新增三个默认关闭的REST入口、稳定服务身份/独立Bearer、严格有界JSON与三公司白名单。app只受理/查询；现有worker每轮一个研究项，独立于新闻监控开关。备份用SQLite一致副本，CAS/研究/回执同短事务；monotonic耗时与token检查过期租约，导出待恢复保留租约、失败60秒退避且不饿死新任务。报告使用跨进程非阻塞锁、锁内一致读快照、逐文件原子替换/索引最后，异常后可恢复而不重复增版。
+- 网页增加材料截止、最近检查/实质更新、覆盖截止/缺口、执行及导出状态；历史页把当前检查状态独立标识，兼容无新表的旧库，不显示principal或提交正文。可选MCP纯HTTP资源端使用官方SDK2.3.0/PyJWT2.15.1，验证本地公钥RS256/issuer/audience/subject/期限及read/write scopes，逐请求读取主体/撤销策略，提供保护资源发现；REST密钥不能认证MCP。不实现私有OAuth登录或发令牌，实际提供方账号/配置仍待连接验收。
+- Settings/.env.example默认RESEARCH_API_ENABLED=false、RESEARCH_APPLY_ENABLED=false；MCP显式profile且默认不启动。增加受限Nginx研究路由/4MiB正文与镜像extra，未把配置模板应用到生产。实际安装本地开发依赖使用`uv pip install --python .venv/Scripts/python.exe mcp==2.3.0 PyJWT==2.15.1`；依赖解析安装不属于真实模型或新闻请求。
+- 实际相关离线测试包括core/HTTP/worker/网页/MCP，MCP真实SDK传输及合成RSA令牌专项23 passed。第一次完整` .venv/Scripts/python.exe -m pytest -q`为870 passed、1 failed、2 skipped，唯一失败为旧订阅测试硬编码schema5；随schema6更新断言。完成修复及新增回归后重新运行完整同命令，最终 **886 passed, 2 skipped in158.10s**。跳过项为既有Linux软链接部署行为和本机无权限创建软链接；本轮未进行Linux容器或生产重演，不宣称跳过项已验证。
+- 实际`git diff --check`与Python3.12文档UTF-8/相对链接检查通过。Docker Compose2.6.0不支持初次使用的no-env-resolution选项；改为明确选择无秘密的.env.example、合成镜像/SHA/目录并捕获输出，执行`docker compose --env-file .env.example -f compose.registry.yaml --profile research-mcp config --format json`后检查服务/命令/profile/回环端口通过，未启动容器。新接口/配置与限制见RESEARCH_CLOUD_API.md，执行计划已同步本地完成状态。
+- 未验证项：真实OAuth提供方及账号绑定、外网MCP/持续写授权、生产schema6迁移/新镜像/Nginx配置、Linux锁及软链接行为。研究质量结构门槛不等于自动证明来源事实或深度；真实研究仍按十部分标准执行。定时任务按用户要求不创建，后续须单独开展这些连接/生产验收。

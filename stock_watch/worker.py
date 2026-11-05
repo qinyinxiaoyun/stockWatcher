@@ -22,6 +22,7 @@ class WorkerCycleResult:
     monitor: MonitorRunResult | None = None
     delivery_processed: bool = False
     management_processed: bool = False
+    research_processed: bool = False
 
 
 def run_worker_once(
@@ -32,11 +33,13 @@ def run_worker_once(
     force: bool = False,
     dry_run: bool = False,
     callback_service=None,
+    research_service=None,
 ) -> WorkerCycleResult:
     """Run one monitor/dispatch cycle without enabling monitoring implicitly."""
 
     # MONITOR_ENABLED gates only automatic scans. Management and durable
     # receipts must continue to work while automatic monitoring is paused.
+    research_processed = bool(research_service.run_one(now=now)) if research_service and not dry_run else False
     management_processed = bool(callback_service.run_one()) if callback_service and not dry_run else False
     # Candidates can become due while automatic scans are disabled or outside
     # trading slots. The worker remains the only background composition point.
@@ -51,7 +54,8 @@ def run_worker_once(
     # must not carry a stale 15:04 timestamp across the 15:05 cutoff.
     monitor_result = service.run_once(now=now, force=force, dry_run=dry_run) if service else None
     return WorkerCycleResult(
-        monitor=monitor_result, delivery_processed=delivery_processed, management_processed=management_processed
+        monitor=monitor_result, delivery_processed=delivery_processed, management_processed=management_processed,
+        research_processed=research_processed
     )
 
 

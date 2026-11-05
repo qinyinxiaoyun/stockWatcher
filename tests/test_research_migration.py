@@ -27,7 +27,7 @@ def test_schema4_upgrade_preserves_configuration_and_delivery(tmp_path, monkeypa
     conn.execute("INSERT INTO outbox(event_key,payload_json,status,available_at,created_at) VALUES ('keep','{}','sent','2026-11-01T00:00:00Z','2026-11-01T00:00:00Z')")
     old_outbox = [tuple(row) for row in conn.execute('SELECT * FROM outbox')]
     init_db(conn)
-    assert conn.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION == 5
+    assert conn.execute('PRAGMA user_version').fetchone()[0] == SCHEMA_VERSION == 6
     current = ConfigStore(conn).snapshot().to_dict()
     before['schema_version'] = current['schema_version']
     personal['schema_version'] = SCHEMA_VERSION

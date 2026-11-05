@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -77,6 +78,29 @@ class Settings:
     news_daily_token_budget: int = 300_000
     news_major_reserve_fraction: float = .2
 
+    research_api_enabled: bool = False
+    research_apply_enabled: bool = False
+    research_allowed_companies: tuple[str, ...] = ("gigadevice", "alibaba", "smic")
+    research_api_token: str = field(default="", repr=False)
+    research_api_principal: str = "cloud-research"
+    research_max_request_bytes: int = 4194304
+    research_report_dir: Path | None = None
+
+    def __post_init__(self) -> None:
+        allowed = self.research_allowed_companies
+        if not allowed or len(set(allowed)) != len(allowed) or not set(allowed) <= {"gigadevice", "alibaba", "smic"}:
+            raise ValueError("invalid research company allowlist")
+        if self.research_api_token and (len(self.research_api_token) < 32 or not self.research_api_token.isascii() or any(c.isspace() for c in self.research_api_token)):
+            raise ValueError("invalid research API token")
+        if not isinstance(self.research_api_principal, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:-]{0,99}", self.research_api_principal):
+            raise ValueError("invalid research API principal")
+        if type(self.research_max_request_bytes) is not int or not 1 <= self.research_max_request_bytes <= 16777216:
+            raise ValueError("invalid research request size")
+        report = self.research_report_dir or self.data_dir / "research" / "reports"
+        if not report.resolve().is_relative_to(self.data_dir.resolve()) or report.resolve() == self.data_dir.resolve():
+            raise ValueError("research report directory must be within DATA_DIR")
+        object.__setattr__(self, "research_report_dir", report)
+
     @classmethod
     def from_env(cls) -> "Settings":
         data_dir = Path(os.getenv("DATA_DIR", "data")).expanduser()
@@ -93,6 +117,13 @@ class Settings:
             raise ValueError("SCHEDULE_TIMEZONE must be Asia/Shanghai")
         return cls(
             data_dir=data_dir,
+            research_api_enabled=_bool("RESEARCH_API_ENABLED"),
+            research_apply_enabled=_bool("RESEARCH_APPLY_ENABLED"),
+            research_allowed_companies=tuple(os.getenv("RESEARCH_ALLOWED_COMPANIES", "gigadevice,alibaba,smic").split(",")),
+            research_api_token=os.getenv("RESEARCH_API_TOKEN", ""),
+            research_api_principal=os.getenv("RESEARCH_API_PRINCIPAL", "cloud-research"),
+            research_max_request_bytes=_budget_int("RESEARCH_MAX_REQUEST_BYTES", 4194304),
+            research_report_dir=Path(os.environ["RESEARCH_REPORT_DIR"]) if "RESEARCH_REPORT_DIR" in os.environ else None,
             database_path=database_path,
             build_sha=os.getenv("BUILD_SHA", "development").strip() or "development",
             monitor_enabled=_bool("MONITOR_ENABLED", False),

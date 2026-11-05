@@ -42,3 +42,14 @@ def test_unverified_period_and_readiness_provenance():
     assert 'href="#source-a%22b"' in html and 'id="source-a%22b"' in html
     assert '&lt;&amp;' in html
     assert local_time(r['as_of']) == '2026-11-03 08:00 北京时间'
+
+
+def test_current_update_historical_label_and_escape():
+    from stock_watch.dashboard_views import render_stock
+    page = render_stock(dict(name='Example',symbol='US:EX',research=dict(historical=True,
+        current_update=dict(last_checked=None,last_updated=None,covered_through=None,
+            gaps=['<script>attack</script>'],task_status='committed_export_pending',export_status='pending'))))
+    assert '不代表所选历史版本当时的检查结果' in page
+    assert '待恢复导出' in page
+    assert '&lt;script&gt;attack&lt;/script&gt;' in page
+    assert '<script>attack</script>' not in page

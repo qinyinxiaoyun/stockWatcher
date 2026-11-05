@@ -15,7 +15,8 @@ dependencies = [
 
 [project.optional-dependencies]
 server = ["gunicorn==26.2.0"]
-dev = ["pytest>=8.4,<10"]
+research-mcp = ["mcp==2.3.0", "PyJWT==2.15.1"]
+dev = ["pytest>=8.4,<10", "mcp==2.3.0", "PyJWT==2.15.1"]
 
 [project.scripts]
 stock-watch = "stock_watch.cli:main"
