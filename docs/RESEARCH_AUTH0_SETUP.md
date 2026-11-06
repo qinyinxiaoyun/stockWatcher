@@ -1,6 +1,6 @@
 # Auth0托管授权配置清单
 
-研究资源：`https://stock.janettepa.uk/mcp/research`。2026-11-06已配置租户 `prod-stockwatch.jp.auth0.com` 的API、客户端、scope、刷新与研究账户身份，并通过真实JWT/旋转刷新验证。生产MCP部署与ChatGPT网页连接分别验收；云端任务仍未创建。
+研究资源：`https://stock.janettepa.uk/mcp/research`。2026-11-06已配置租户 `prod-stockwatch.jp.auth0.com` 的API、客户端、scope、刷新与研究账户身份，并通过真实JWT/旋转刷新验证。生产MCP网关已部署2e28e5b，公开发现200、未认证401、真实JWT三工具读取与身份隔离通过；操作者已确认ChatGPT网页调用返回三家公司摘要，并授权该插件自动执行操作，插件权限更新成功。云端任务尚未创建，当前Codex接口仅提供本地任务创建，网页控制通道也未能启动。
 
 ## ChatGPT连接参数
 
@@ -9,6 +9,8 @@
 - 回调：`https://chatgpt.com/connector_platform_oauth_redirect`，取自已实际获取的OpenAI公开客户端元数据，同时核实Auth0 issuer identification支持。
 - OAuth权限：`research:read research:write offline_access`；登录使用此次已验证的研究账户，与管理员CLI登录分开。
 - 实际issuer：`https://prod-stockwatch.jp.auth0.com/`（保留尾斜杠）；访问令牌3600秒，研究用户身份由已验证签名JWT取得，不用email猜sub。
+
+在ChatGPT网页插件页添加自定义MCP，选择OAuth并显式填写上述静态Client ID；此租户不支持自动DCR，不能把Client ID也留空。登录用此次验证的同一研究账户邮箱密码。连接完成后应能看到research_get_snapshot、research_submit_update、research_get_run_status，先读取快照，再验证自动任务的写入批准策略；OAuth有write scope不等于ChatGPT产品已允许无人值守写操作。
 
 ## 操作者最少步骤
 
@@ -20,7 +22,7 @@
 
 官方CLI支持Windows/macOS/Linux，入口 https://auth0.github.io/auth0-cli/ ，发行包仅从 https://github.com/auth0/auth0-cli/releases 获取，选择明确固定稳定版本与匹配系统架构。Windows使用Windows_x86_64.zip，其他系统取对应Darwin/Linux架构包。不要执行网络下载脚本管道。
 
-执行前比较官方同版本checksum文件与本地SHA256；若发行物提供发布者签名或GitHub构建attestation，核对其身份绑定auth0/auth0-cli及固定版本。普通checksum不能冒称签名。本轮未下载或执行CLI，具体取得方式在账号就绪后按实际稳定版本核实。
+执行前比较官方同版本checksum文件与本地SHA256；若发行物提供发布者签名或GitHub构建attestation，核对其身份绑定auth0/auth0-cli及固定版本。普通checksum不能冒称签名。本轮经明确授权已下载并运行官方CLI1.39.0，ZIP SHA256与官方同版本checksums匹配，未验证发布者签名。
 
 ## 已核实命令参数（供助手执行，当前未执行）
 
@@ -54,4 +56,4 @@ agent-mode设备登录输出URL/code JSON并等待人批准，随后设默认租
 - https://github.com/auth0/docs/blob/master/articles/api-auth/dynamic-client-registration.md
 - https://github.com/auth0/docs/blob/master/articles/tokens/guides/get-refresh-tokens.md
 
-尚未验证：租户实际权限/套餐、CLI发布物签名、ChatGPT客户端登记方式与回调、refresh rotation互操作、实际研究用户subject和生产JWKS。
+已验证：租户管理登录、API/客户端与回调、PKCE代码交换、真实研究subject/签名/audience/scope/1小时access token、真实旋转刷新、生产JWKS/白名单权限、MCP只读往返。操作者已确认网页连接实际返回三家摘要，并明确批准仅StockWatcher自动执行操作；产品权限接口已返回full_access更新成功，其他插件和全局权限不变。尚未验证：网页云端任务创建、首次真实研究保存与无人值守持续运行；没有对CLI发布物签名作已验证声明。创建消息见 [CREATE_RESEARCH_CLOUD_TASK.md](CREATE_RESEARCH_CLOUD_TASK.md)。

@@ -677,3 +677,13 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 独立账户登录验证issuer/audience/签名/两scope、3600秒期限及真实subject；随后实测refresh grant与旋转新refresh token、身份/受众一致。凭证仅存被忽略.env.auth0.research.local，不输出身份或令牌。ChatGPT静态回调由实际GET https://chatgpt.com/oauth/client.json取得，唯一为https://chatgpt.com/connector_platform_oauth_redirect；Auth0公开discovery也实际确认issuer identification=true，客户端已据此登记，未猜回调。刷新配置为旋转、最长365.25天、空闲30天；bootstrap首次签发沿用当时期限，ChatGPT新授权按新配置签发。
 - 接入审查发现旧MCP仅PRM声明read，工具未声明scope、缺write仅返回普通错误，可能导致ChatGPT无法可靠取得写权限。修复固定PRM公开read/write+header方式、工具_meta.securitySchemes，并在缺写权限时返回isError及mcp/www_authenticate升级挑战，保留只读用户读取能力及原成功响应。真实SDK专项23 passed；完整Python3.12离线pytest为 **886 passed, 2 skipped in165.20s**，diff检查通过。
 - 尚待本轮新镜像发布、生产MCP网关/JWKS/主体白名单落地及真实只读连接验证。网页工具再次因Windows helper无法启动，当前定时工具仍仅本地；不以此冒称ChatGPT已连接或云端任务已创建。
+
+### 2026-11-06 生产MCP及网页连接完成，云端创建入口仍缺失
+
+- 业务提交2e28e5b965555ead6ab0fb840acd19fab9e56617经[run42139525969](https://github.com/qinyinxiaoyun/stockWatcher/actions/runs/42139525969)完成test/image/deploy，Linux完整888 passed in65.54s。本地此前886 passed/2 skipped，真实SDK专项23 passed；本节后续仅文档更新，不重复业务测试。
+- 生产app/worker及独立纯HTTP MCP网关使用同一不可变镜像sha256:f3b4a6094e25b8faa42982240362332e11b9a1ca4b113b37a64998472cbab359，schema6。独立Compose stock-watch-research仅回环8001、UID10001/只读根；环境白名单不含企业微信、DeepSeek、门户或REST令牌。JWKS/单研究主体策略存持久目录，root:10001、目录0750/文件0640。Nginx精确暴露MCP与保护资源发现路径，未增加调度器、宿主机cron或固定部署工具权限。
+- 实际执行Auth0真实令牌公网MCP initialize/tools/list/snapshot/status读取及坏令牌拒绝，公开发现200、无认证401、工具scope元数据与调用身份隔离通过。安全结果存data/research/working/auth0-mcp-acceptance.json；三公司仍v2，全库9研究版本/0检查/既有1个dry-run运行3项，未提交新研究或触发消息/模型。初次Nginx reload后的HTTP检查短暂失败，后续独立公开发现与真实JWT请求均通过，不将第一次脚本退出冒称全程成功。
+- 操作者已在ChatGPT插件详情看到三个工具，并确认网页@StockWatcher调用research_get_snapshot返回三家公司摘要；此项为操作者实际网页验证。随后明确许可仅StockWatcher自动执行操作，实际update_app_permissions返回app_permission_mode=full_access/status=updated；未修改全局或其他插件权限。
+- 当前Codex automation_update创建声明仅local cron/thread heartbeat；另有Sites专属云任务接口，需要已发布Sites项目及正式schedule_request_id，不适用于现有自建站。网页控制通道Windows helper此前无法启动。当前没有通用ChatGPT网页云任务创建入口，不因已获得用户授权而虚构能力或任务回执；云端任务尚未创建，周一至周五05:00 Asia/Shanghai仍为待落实计划。
+- 已备CREATE_RESEARCH_CLOUD_TASK.md完整创建消息，持久正文保持三公司、增量/七天更正、十部分研究、真实来源、CAS/幂等/回执/无外部推送，并明确每次运行不得递归创建任务。操作者在已有网页连接的聊天发送即可申请云端创建；仍需取得实际平台任务ID、启用状态、时区与下一次运行时间，再验收首次真实研究保存及无人值守刷新。未声称05:00已会自动运行。
+- 网关独立Compose未接入既有CI自动切换，未来业务版本需管理员显式同步网关镜像并验证schema/接口兼容；不能把app/worker发布成功等同网关自动更新。本次两者相同版本已核对。成员/全局配置hash及MONITOR_ENABLED=true保持；研究任务未扩大真实监控或投递授权。
