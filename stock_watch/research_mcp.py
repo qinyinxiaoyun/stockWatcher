@@ -125,6 +125,15 @@ class StrictMCPRequests:
         self.app, self.verifier, self.maximum = app, verifier, maximum
 
     async def __call__(self, scope, receive, send):
+        if (scope['type'] == 'http' and scope['method'] == 'GET'
+                and scope['path'] == '/.well-known/oauth-protected-resource/mcp/research'):
+            from starlette.responses import JSONResponse
+            config = self.verifier.config
+            return await JSONResponse({
+                'resource': config.resource, 'authorization_servers': [config.issuer],
+                'scopes_supported': ['research:read', 'research:write'],
+                'bearer_methods_supported': ['header'],
+            })(scope, receive, send)
         if (scope['type'] == 'http' and scope['path'] == '/mcp/research'
                 and scope['method'] == 'POST'):
             from starlette.datastructures import Headers
@@ -170,7 +179,7 @@ def create_mcp_app(settings: Settings | None = None, config: MCPSettings | None 
     from mcp.server.auth.settings import AuthSettings
     from mcp.server.auth.middleware.auth_context import get_access_token
     from mcp.server.transport_security import TransportSecuritySettings
-    from mcp.types import ToolAnnotations
+    from mcp.types import ToolAnnotations, CallToolResult, TextContent
     from starlette.concurrency import run_in_threadpool
     from .db import connect
     from .research_updates import ResearchUpdates, ResearchUpdateError
@@ -189,7 +198,14 @@ def create_mcp_app(settings: Settings | None = None, config: MCPSettings | None 
     async def invoke(method, *args, write=False, **kwargs):
         token = get_access_token()
         if token is None or not token.subject or (write and 'research:write' not in token.scopes):
-            return {'error': 'insufficient_scope'}
+            scopes = 'research:read research:write' if write else 'research:read'
+            origin = 'https://' + urlsplit(config.resource).netloc
+            challenge = (f'Bearer resource_metadata="{origin}/.well-known/oauth-protected-resource/mcp/research", '
+                         'error="insufficient_scope", error_description="Additional research authorization required", '
+                         f'scope="{scopes}"')
+            return CallToolResult(is_error=True,
+                                  content=[TextContent(type='text', text='Additional research authorization required.')],
+                                  meta={'mcp/www_authenticate': [challenge]})
         def perform():
             connection = None
             try:
@@ -211,18 +227,21 @@ def create_mcp_app(settings: Settings | None = None, config: MCPSettings | None 
                     connection.close()
         return await run_in_threadpool(perform)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @server.tool(meta={'securitySchemes': [{'type': 'oauth2', 'scopes': ['research:read']}]},
+                 annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def research_get_snapshot(company_ids: list[str] | None = None, full: bool = False) -> dict:
         """Read current public research, contract and coverage; request full documents only as needed."""
         return await invoke('snapshot', company_ids, full=full)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
+    @server.tool(meta={'securitySchemes': [{'type': 'oauth2', 'scopes': ['research:read', 'research:write']}]},
+                 annotations=ToolAnnotations(readOnlyHint=False, destructiveHint=False,
                                            idempotentHint=True, openWorldHint=False))
     async def research_submit_update(payload: dict) -> dict:
         """Queue UPDATE/NO_CHANGE/INCOMPLETE research. Requires research:write. Query receipt afterwards."""
         return await invoke('submit', payload, write=True)
 
-    @server.tool(annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
+    @server.tool(meta={'securitySchemes': [{'type': 'oauth2', 'scopes': ['research:read']}]},
+                 annotations=ToolAnnotations(readOnlyHint=True, openWorldHint=False))
     async def research_get_run_status(run_id: str) -> dict:
         """Read this authenticated identity's receipt; accepted submissions are not completed updates."""
         return await invoke('get_status', run_id)

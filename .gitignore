@@ -54,5 +54,6 @@ temp/
 release-*.tar.gz
 release-*.zip
 .envrc
+.config/
 *.der
 *.pkcs8

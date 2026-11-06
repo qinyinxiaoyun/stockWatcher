@@ -52,6 +52,8 @@ def test_real_sdk_auth_discovery_tools_and_call(oauth):
         metadata = client.get('/.well-known/oauth-protected-resource/mcp/research').json()
         assert metadata['resource'] == config.resource
         assert metadata['authorization_servers'] == [config.issuer]
+        assert metadata['scopes_supported'] == ['research:read', 'research:write']
+        assert metadata['bearer_methods_supported'] == ['header']
         initialized = rpc(client, sign(), 'initialize', {'protocolVersion': '2025-11-25',
                           'capabilities': {}, 'clientInfo': {'name': 'offline', 'version': '1'}})
         assert initialized.status_code == 200
@@ -81,7 +83,20 @@ def test_read_token_cannot_submit_and_revocation_reloads(oauth):
     with TestClient(create_mcp_app(settings, config), base_url='https://stock.example') as client:
         response = rpc(client, sign(scope='research:read'), 'tools/call',
                        {'name': 'research_submit_update', 'arguments': {'payload': {}}})
-        assert 'insufficient_scope' in response.text
+        assert response.status_code == 200
+        result = response.json()['result']
+        assert result['isError'] is True
+        challenge = result['_meta']['mcp/www_authenticate'][0]
+        for value in ('insufficient_scope', 'error_description=', 'resource_metadata=', 'research:read research:write'):
+            assert value in challenge
+        tools = rpc(client, sign(scope='research:read'), 'tools/list').json()['result']['tools']
+        for tool in tools:
+            scopes = tool['_meta']['securitySchemes'][0]['scopes']
+            assert scopes == (['research:read', 'research:write'] if tool['name'] == 'research_submit_update' else ['research:read'])
+        read = rpc(client, sign(scope='research:read'), 'tools/call',
+                   {'name': 'research_get_snapshot', 'arguments': {}})
+        assert read.status_code == 200 and not read.json()['result'].get('isError')
+        assert rpc(client, 'invalid-token', 'tools/list').status_code == 401
         conn = connect(settings.database_path)
         assert conn.execute('SELECT COUNT(*) FROM research_update_runs').fetchone()[0] == 0
         conn.close()

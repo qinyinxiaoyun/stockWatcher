@@ -668,3 +668,12 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 旧网页检查脚本假定至少6只关注股，因当前真实订阅并集为5而失败；改为独立读取当前订阅集合，与HTTP链接逐一精确比对，而不是降低到任意数量。实际 `tmp/check-research-cloud-portal.py <完整SHA>` 通过5股票页、三公司“仅校验”卡、全部相关历史链接/历史页、退出隐藏及health/ready；页面涉及8版本/37来源，全库9版本保留。此为HTTP脚本，不是浏览器操作；中间短SHA比较失败也未冒称成功。
 - 云端能力实查：list_cloud_environments为空、项目仅local、automation_update创建仅本地；现存两个用户目录只发现AI工程周报，无三家公司研究任务。实际尝试网页工具，Windows helper启动失败，未进入或修改网页。Auth0插件目录搜索无可用结果。服务器实测总内存959MiB，未在原机叠加Keycloak；选择托管Auth0，已请操作者注册租户并提供公开域名（不发送密码/密钥），后续可设备登录一次后配置API/scopes/JWKS/主体策略，再完成ChatGPT授权与真实云端创建。
 - 已保存准确工具名、增量/七天更正、十部分标准、CAS/幂等/真实回执和无外部推送的持久正文RESEARCH_DAILY_PROMPT.md；Auth0账号与资源配置清单在RESEARCH_AUTH0_SETUP.md。尚无OAuth租户、研究用户、MCP连接或云端task ID，不能声称明早05:00会自动运行。后续文档提交使用skip ci，不重新构建已验收镜像。
+
+### 2026-11-06 Auth0接入与MCP权限发现修复（发布进行中）
+
+- 操作者提供prod-stockwatch.jp.auth0.com，并分别明确批准官方CLI1.39.0下载/执行、该租户管理权限及本机登录持久化，完成管理员设备登录及独立研究账户PKCE登录。此前自动审批分别拒绝未经明确批准的CLI执行和广泛管理scope；补齐明确授权后原动作通过。中间另一次因账号用量无法完成自动审核，未执行该请求；本轮继续后恢复正常，未绕过审批。
+- 官方CLI ZIP SHA256为8f480bd1f9805bf66c61d2c6f7efdacee67fb27b5a5a03d053be1f2326f9612d，与同版本checksums匹配；该结果不冒称发布者签名。令牌/CLI缓存保持本地私有，新增.config/忽略规则，未打印或提交。管理员登录有效期为11月6日08:50+08，后续研究连接使用独立账号/两项scope，不使用此管理令牌。
+- 已实际创建研究API（固定identifier=https://stock.janettepa.uk/mcp/research，RS256，3600秒，两项scope，offline access），并核对tenant顶层resource_parameter_profile=compatibility。实际创建native/public客户端，authorization_code+refresh_token、PKCE S256；通过官方连接enabled-clients增量操作启用数据库登录。旧connections fields查询及PATCH enabled_clients字段400，已按实际CLI新接口修正；没有改写其他客户端启用名单。
+- 独立账户登录验证issuer/audience/签名/两scope、3600秒期限及真实subject；随后实测refresh grant与旋转新refresh token、身份/受众一致。凭证仅存被忽略.env.auth0.research.local，不输出身份或令牌。ChatGPT静态回调由实际GET https://chatgpt.com/oauth/client.json取得，唯一为https://chatgpt.com/connector_platform_oauth_redirect；Auth0公开discovery也实际确认issuer identification=true，客户端已据此登记，未猜回调。刷新配置为旋转、最长365.25天、空闲30天；bootstrap首次签发沿用当时期限，ChatGPT新授权按新配置签发。
+- 接入审查发现旧MCP仅PRM声明read，工具未声明scope、缺write仅返回普通错误，可能导致ChatGPT无法可靠取得写权限。修复固定PRM公开read/write+header方式、工具_meta.securitySchemes，并在缺写权限时返回isError及mcp/www_authenticate升级挑战，保留只读用户读取能力及原成功响应。真实SDK专项23 passed；完整Python3.12离线pytest为 **886 passed, 2 skipped in165.20s**，diff检查通过。
+- 尚待本轮新镜像发布、生产MCP网关/JWKS/主体白名单落地及真实只读连接验证。网页工具再次因Windows helper无法启动，当前定时工具仍仅本地；不以此冒称ChatGPT已连接或云端任务已创建。

@@ -1,6 +1,14 @@
-# Auth0托管授权配置清单（尚未执行）
+# Auth0托管授权配置清单
 
-研究资源：`https://stock.janettepa.uk/mcp/research`。本文件只记录核实后的配置；没有创建租户、应用、密钥或云端任务。
+研究资源：`https://stock.janettepa.uk/mcp/research`。2026-11-06已配置租户 `prod-stockwatch.jp.auth0.com` 的API、客户端、scope、刷新与研究账户身份，并通过真实JWT/旋转刷新验证。生产MCP部署与ChatGPT网页连接分别验收；云端任务仍未创建。
+
+## ChatGPT连接参数
+
+- MCP地址：`https://stock.janettepa.uk/mcp/research`。
+- 身份验证：OAuth；静态公共客户端ID：`F1fDSnothRIHmUk5DKNkSdwPBxCJwrw4`，Client Secret留空。
+- 回调：`https://chatgpt.com/connector_platform_oauth_redirect`，取自已实际获取的OpenAI公开客户端元数据，同时核实Auth0 issuer identification支持。
+- OAuth权限：`research:read research:write offline_access`；登录使用此次已验证的研究账户，与管理员CLI登录分开。
+- 实际issuer：`https://prod-stockwatch.jp.auth0.com/`（保留尾斜杠）；访问令牌3600秒，研究用户身份由已验证签名JWT取得，不用email猜sub。
 
 ## 操作者最少步骤
 
