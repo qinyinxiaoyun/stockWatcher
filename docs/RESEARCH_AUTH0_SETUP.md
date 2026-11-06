@@ -1,6 +1,6 @@
 # Auth0托管授权配置清单
 
-研究资源：`https://stock.janettepa.uk/mcp/research`。2026-11-06已配置租户 `prod-stockwatch.jp.auth0.com` 的API、客户端、scope、刷新与研究账户身份，并通过真实JWT/旋转刷新验证。生产MCP网关已部署2e28e5b，公开发现200、未认证401、真实JWT三工具读取与身份隔离通过；操作者已确认ChatGPT网页调用返回三家公司摘要，并授权该插件自动执行操作，插件权限更新成功。云端任务尚未创建，当前Codex接口仅提供本地任务创建，网页控制通道也未能启动。
+研究资源：`https://stock.janettepa.uk/mcp/research`。2026-11-06已配置租户 `prod-stockwatch.jp.auth0.com` 的API、客户端、scope、刷新与研究账户身份，并通过真实JWT/旋转刷新验证。生产MCP网关已部署2e28e5b，公开发现200、未认证401、真实JWT三工具读取与身份隔离通过；操作者已确认ChatGPT网页调用返回三家公司摘要，并授权该插件自动执行操作，插件权限更新成功。操作者现已确认网页云端任务创建完成；实际任务配置及首次运行回执待核，不重复创建。
 
 ## ChatGPT连接参数
 
@@ -56,4 +56,4 @@ agent-mode设备登录输出URL/code JSON并等待人批准，随后设默认租
 - https://github.com/auth0/docs/blob/master/articles/api-auth/dynamic-client-registration.md
 - https://github.com/auth0/docs/blob/master/articles/tokens/guides/get-refresh-tokens.md
 
-已验证：租户管理登录、API/客户端与回调、PKCE代码交换、真实研究subject/签名/audience/scope/1小时access token、真实旋转刷新、生产JWKS/白名单权限、MCP只读往返。操作者已确认网页连接实际返回三家摘要，并明确批准仅StockWatcher自动执行操作；产品权限接口已返回full_access更新成功，其他插件和全局权限不变。尚未验证：网页云端任务创建、首次真实研究保存与无人值守持续运行；没有对CLI发布物签名作已验证声明。创建消息见 [CREATE_RESEARCH_CLOUD_TASK.md](CREATE_RESEARCH_CLOUD_TASK.md)。
+已验证：租户管理登录、API/客户端与回调、PKCE代码交换、真实研究subject/签名/audience/scope/1小时access token、真实旋转刷新、生产JWKS/白名单权限、MCP只读往返。操作者已确认网页连接实际返回三家摘要、网页任务创建完成，并明确批准仅StockWatcher自动执行操作；产品权限接口已返回full_access更新成功，其他插件和全局权限不变。尚未独立验证：任务ID/启用状态/实际时间配置、首次真实研究保存与无人值守持续运行；没有对CLI发布物签名作已验证声明。创建消息留档见 [CREATE_RESEARCH_CLOUD_TASK.md](CREATE_RESEARCH_CLOUD_TASK.md)。

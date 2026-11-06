@@ -1,6 +1,6 @@
 # 云端研究更新接口与配置
 
-三个HTTP接口、worker更新、历史归档和网页状态已部署生产，2026-11-06业务版本2e28e5b/schema6，独立MCP网关同版本；Auth0账户/刷新/公开发现/真实JWT只读往返已验证。生产已开启受限REST接口及正式保存开关，三家公司dry-run回执已验证，未制造新研究版本。操作者已确认网页连接返回三家摘要，仅StockWatcher自动执行权限已更新成功。**ChatGPT网页云端定时任务尚未创建**：当前Codex仅提供本地任务创建接口，网页控制通道无法启动。执行计划见 [RESEARCH_CLOUD_PLAN.md](RESEARCH_CLOUD_PLAN.md)，任务正文见 [RESEARCH_DAILY_PROMPT.md](RESEARCH_DAILY_PROMPT.md)，网页完整创建消息见 [CREATE_RESEARCH_CLOUD_TASK.md](CREATE_RESEARCH_CLOUD_TASK.md)。时间为周一至周五05:00、Asia/Shanghai。
+三个HTTP接口、worker更新、历史归档和网页状态已部署生产，2026-11-06业务版本2e28e5b/schema6，独立MCP网关同版本；Auth0账户/刷新/公开发现/真实JWT只读往返已验证。生产已开启受限REST接口及正式保存开关，三家公司dry-run回执已验证，未制造新研究版本。操作者已确认网页连接返回三家摘要，仅StockWatcher自动执行权限已更新成功。**2026-11-06操作者确认ChatGPT网页云端定时任务已创建**；平台任务ID、实际配置及首次运行回执仍待核对。执行计划见 [RESEARCH_CLOUD_PLAN.md](RESEARCH_CLOUD_PLAN.md)，任务正文见 [RESEARCH_DAILY_PROMPT.md](RESEARCH_DAILY_PROMPT.md)，创建消息留档见 [CREATE_RESEARCH_CLOUD_TASK.md](CREATE_RESEARCH_CLOUD_TASK.md)。计划时间为周一至周五05:00、Asia/Shanghai。
 
 ## 运行与迁移
 
@@ -81,7 +81,7 @@ RESEARCH_MCP_POLICY_FILE=/data/research/oauth/policy.json
 
 提供方需为上述resource颁发access token并提供标准OAuth发现、授权码/PKCE、客户注册及刷新/撤销能力。ChatGPT连接使用其管理页给出的实际redirect URI，不能猜回调地址或把网页会话当OAuth。工具声明分别为只读/写入，写工具权限按真实平台能力授权，不以只读标注或匿名写绕过。
 
-本地离线SDK测试覆盖真实HTTP传输、资源发现、签名令牌、三工具往返、scope/主体/受众/期限校验、撤权/公钥更新与畸形JSON。生产REST快照、提交及回执已通过；Auth0已完成实际账户登录、旋转刷新和生产MCP公开发现/真实JWT只读连接，三公司仍为版本2。操作者确认网页摘要读取成功，仅StockWatcher自动执行权限已更新；云端任务创建、首次真实保存及持续无人值守运行仍待验收。
+本地离线SDK测试覆盖真实HTTP传输、资源发现、签名令牌、三工具往返、scope/主体/受众/期限校验、撤权/公钥更新与畸形JSON。生产REST快照、提交及回执已通过；Auth0已完成实际账户登录、旋转刷新和生产MCP公开发现/真实JWT只读连接，三公司仍为版本2。操作者确认网页摘要读取成功、云端任务已创建，仅StockWatcher自动执行权限已更新；实际任务配置、首次真实保存及持续无人值守运行仍待验收。
 
 网关当前作为受保护独立Compose项目stock-watch-research部署，文件在服务器shared/research-mcp/compose.yaml，与业务镜像同digest；仅回环8001、UID10001、只读根、192MiB限制。它仅装载研究配置，不携带企业微信/模型/门户/REST凭证。既有受限发布流程只管理app/worker，后续业务发布须经可信管理连接同步网关镜像并核验schema/合同兼容，不能假定CI会自动更新这一独立服务。固定部署脚本未因此扩大权限。
 
@@ -91,4 +91,4 @@ RESEARCH_MCP_POLICY_FILE=/data/research/oauth/policy.json
 
 导出包含跨进程非阻塞目录锁与一致读快照，逐文件原子替换，索引最后写；保留调用方事务。备份与远程研究均不占数据库写事务。
 
-工程验收必须全离线；真实云端账号连接、生产迁移/新镜像/代理配置与定时任务创建分别登记。操作者后续已授权部署及创建任务；生产REST/MCP及网页连接已就绪，定时任务因当前会话缺少网页云任务创建入口而未创建，不能将本地自动化或计划中的05:00冒称云端已运行。
+工程验收必须全离线；真实云端账号连接、生产迁移/新镜像/代理配置与定时任务创建分别登记。生产REST/MCP及网页连接已就绪，操作者已确认网页任务创建完成；不重复创建，不能将该确认或计划中的05:00冒称首次云端研究已执行成功。
