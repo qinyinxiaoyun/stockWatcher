@@ -3,7 +3,7 @@ from http import HTTPStatus
 import re
 from urllib.parse import parse_qs
 
-from .dashboard_auth import Auth, CSRF_COOKIE, SESSION_COOKIE
+from .dashboard_auth import Auth, CSRF_COOKIE, SESSION_COOKIE, SESSION_LIFETIME, REMEMBERED_SESSION_LIFETIME
 from .dashboard_data import Unavailable, load_dashboard, load_stock
 from .dashboard_views import CSS, render_error, render_login, render_overview, render_stock
 
@@ -67,9 +67,11 @@ class Dashboard:
         raw = environ['wsgi.input'].read(length)
         if not isinstance(raw, bytes) or len(raw) != length:
             raise ValueError('incomplete_form')
-        form = parse_qs(raw.decode('utf-8'), keep_blank_values=True, max_num_fields=4, encoding='utf-8', errors='strict')
-        if any(len(values) != 1 for values in form.values()) or set(form) - {'username', 'password', 'csrf', 'next'}:
+        form = parse_qs(raw.decode('utf-8'), keep_blank_values=True, max_num_fields=5, encoding='utf-8', errors='strict')
+        if any(len(values) != 1 for values in form.values()) or set(form) - {'username', 'password', 'csrf', 'next', 'remember'}:
             raise ValueError('invalid_form_fields')
+        if 'remember' in form and form['remember'] != ['1']:
+            raise ValueError('invalid_remember_option')
         return {key: values[0] for key, values in form.items()}
 
     def __call__(self, environ, start_response):
@@ -97,10 +99,12 @@ class Dashboard:
                 destination = self._destination(form.get('next', '/'))
                 if not self.auth.validate_login_csrf(environ, form.get('csrf', '')):
                     return self._login_page(start_response, '登录页面已失效，请重新输入。', destination, 403, environ=environ)
-                token = self.auth.login(form.get('username', ''), form.get('password', ''), environ.get('REMOTE_ADDR', 'unknown'))
+                remember = form.get('remember') == '1'
+                token = self.auth.login(form.get('username', ''), form.get('password', ''), environ.get('REMOTE_ADDR', 'unknown'), remember=remember)
                 if token is None:
                     return self._login_page(start_response, '登录未成功，请核对访问凭证，稍后再试。', destination, 401, environ=environ)
-                return self._response(start_response, 303, headers=[('Location', destination), self._cookie(SESSION_COOKIE, token, 28800), self._cookie(CSRF_COOKIE, '', 0)])
+                lifetime = REMEMBERED_SESSION_LIFETIME if remember else SESSION_LIFETIME
+                return self._response(start_response, 303, headers=[('Location', destination), self._cookie(SESSION_COOKIE, token, lifetime), self._cookie(CSRF_COOKIE, '', 0)])
             if method != 'GET':
                 return self._response(start_response, 405, render_error('此页面仅供查看。', 405))
             query = self._query(environ)

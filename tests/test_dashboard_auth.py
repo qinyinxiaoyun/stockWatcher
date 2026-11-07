@@ -1,3 +1,5 @@
+import base64
+import json
 from types import SimpleNamespace
 from stock_watch.dashboard_auth import Auth
 
@@ -151,3 +153,67 @@ def test_idle_twenty_minutes_can_logout(context):
     assert auth.validate_logout_csrf(env, csrf)
     now[0] += 28800
     assert not auth.validate_logout_csrf(env, csrf)
+
+
+@pytest.mark.parametrize('remember,lifetime', [(False, 28800), (True, 2592000)])
+def test_session_duration_is_fixed_at_eight_hours_or_thirty_days(context, remember, lifetime):
+    auth, settings, now = context
+    issued_at = now[0]
+    session = auth.login('admin', settings.dashboard_password, 'ip', remember=remember)
+    assert auth.valid_session(session)
+    now[0] = issued_at + lifetime - 1
+    assert auth.valid_session(session)
+    now[0] += 1
+    assert not auth.valid_session(session)
+    now[0] = issued_at - 1
+    assert not auth.valid_session(session)
+
+
+@pytest.mark.parametrize('lifetime', [600, 86400, 28801, 2592001, 31536000])
+def test_even_signed_sessions_cannot_choose_arbitrary_lifetimes(context, lifetime):
+    auth, _, _ = context
+    assert not auth.valid_session(auth._issue('session', lifetime))
+
+
+def test_changing_signed_duration_cannot_extend_an_eight_hour_session(context):
+    auth, settings, now = context
+    session = auth.login('admin', settings.dashboard_password, 'ip')
+    body, signature = session.split('.')
+    payload = json.loads(base64.urlsafe_b64decode(body + '=' * (-len(body) % 4)))
+    payload[2] = 2592000
+    changed = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode().rstrip('=')
+    now[0] += 28801
+    assert not auth.valid_session(changed + '.' + signature)
+
+
+@pytest.mark.parametrize('remember', [False, True])
+@pytest.mark.parametrize('field,value', [
+    ('dashboard_username', 'new-admin'),
+    ('dashboard_password', 'new-password-for-tests'),
+    ('dashboard_session_secret', 'new-session-key-for-tests-' * 3),
+])
+def test_credential_rotation_revokes_both_session_durations(context, remember, field, value):
+    auth, settings, now = context
+    session = auth.login('admin', settings.dashboard_password, 'ip', remember=remember)
+    now[0] += 60
+    assert auth.valid_session(session)
+    setattr(settings, field, value)
+    rotated = Auth(settings, lambda: now[0])
+    assert not rotated.valid_session(session)
+    replacement = rotated.login(settings.dashboard_username, settings.dashboard_password, 'ip', remember=remember)
+    assert replacement and rotated.valid_session(replacement)
+
+
+def test_remembered_session_can_logout_from_original_page_after_eight_hours(context):
+    auth, settings, now = context
+    issued_at = now[0]
+    session = auth.login('admin', settings.dashboard_password, 'ip', remember=True)
+    logout = auth.issue_logout_csrf(session)
+    env = {'HTTP_ORIGIN': settings.dashboard_origin, 'HTTP_COOKIE': 'sw_portal_session=' + session}
+    now[0] = issued_at + 28801
+    assert auth.valid_session(session)
+    assert auth.validate_logout_csrf(env, logout)
+    other = auth.login('admin', settings.dashboard_password, 'ip', remember=True)
+    assert not auth.validate_logout_csrf({**env, 'HTTP_COOKIE': 'sw_portal_session=' + other}, logout)
+    now[0] = issued_at + 2592000
+    assert not auth.validate_logout_csrf(env, logout)

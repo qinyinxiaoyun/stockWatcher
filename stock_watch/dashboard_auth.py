@@ -11,6 +11,8 @@ from urllib.parse import urlsplit
 
 SESSION_COOKIE = 'sw_portal_session'
 CSRF_COOKIE = 'sw_portal_csrf'
+SESSION_LIFETIME = 8 * 60 * 60
+REMEMBERED_SESSION_LIFETIME = 30 * 24 * 60 * 60
 
 class Auth:
     def __init__(self, settings, clock=time.time):
@@ -76,7 +78,7 @@ class Auth:
         cookie = self._cookie(environ, CSRF_COOKIE)
         return bool(self.same_origin(environ) and isinstance(formtoken, str) and cookie and hmac.compare_digest(cookie, formtoken) and self._verify(formtoken, 'login', 600))
 
-    def login(self, username, password, remote_addr):
+    def login(self, username, password, remote_addr, *, remember=False):
         if not self.configured or not isinstance(username, str) or not isinstance(password, str) or len(username) > 256 or len(password) > 4096:
             return None
         ip = str(remote_addr)[:256]
@@ -89,22 +91,35 @@ class Auth:
             valid = hmac.compare_digest(username.encode(), self.settings.dashboard_username.encode()) & hmac.compare_digest(password.encode(), self.settings.dashboard_password.encode())
             if valid:
                 self._failures.pop(ip, None)
-                return self._issue('session', 28800)
+                lifetime = REMEMBERED_SESSION_LIFETIME if remember is True else SESSION_LIFETIME
+                return self._issue('session', lifetime)
             if len(self._failures) >= 4096 and ip not in self._failures:
                 self._failures.pop(next(iter(self._failures)))
             self._failures[ip] = (start, count + 1)
             return None
 
+    def session_lifetime(self, cookie):
+        # The signed payload must match a server-approved lifetime. Keep
+        # existing eight-hour sessions valid across this release.
+        for lifetime in (SESSION_LIFETIME, REMEMBERED_SESSION_LIFETIME):
+            if self._verify(cookie, 'session', lifetime):
+                return lifetime
+        return None
+
     def valid_session(self, cookie):
-        return self._verify(cookie, 'session', 28800)
+        return self.session_lifetime(cookie) is not None
 
     def session_from_environ(self, environ):
         token = self._cookie(environ, SESSION_COOKIE)
         return token if self.valid_session(token) else None
 
     def issue_logout_csrf(self, session):
-        return self._issue('logout', 28800, hashlib.sha256(session.encode()).hexdigest())
+        lifetime = self.session_lifetime(session)
+        if lifetime is None:
+            raise ValueError('invalid_session')
+        return self._issue('logout', lifetime, hashlib.sha256(session.encode()).hexdigest())
 
     def validate_logout_csrf(self, environ, formtoken):
-        session = self.session_from_environ(environ)
-        return bool(session and self.same_origin(environ) and self._verify(formtoken, 'logout', 28800, hashlib.sha256(session.encode()).hexdigest()))
+        session = self._cookie(environ, SESSION_COOKIE)
+        lifetime = self.session_lifetime(session)
+        return bool(lifetime and self.same_origin(environ) and self._verify(formtoken, 'logout', lifetime, hashlib.sha256(session.encode()).hexdigest()))

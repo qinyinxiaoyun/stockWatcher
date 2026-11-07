@@ -695,3 +695,10 @@ Docker提示宿主机缺少swap限制能力；已核对内存上限生效，但�
 - 尚待首次真实研究提交、逐公司保存/无变化/缺口、报告导出和快照水位的服务器回执。创建完成不等于研究已经更新；不为验证捏造来源或主动执行一次完整研究。本轮仅文档状态同步，不变更业务、生产环境、研究数据或插件权限。
 - 操作者随后回复下次为“下周一5点”，按已约定Asia/Shanghai即2026-11-09 05:00，与周一至周五05:00计划一致；这是用户确认的任务时间，平台任务ID、启用状态和实际时区字段仍未独立读取，不再重复索取创建或授权。
 - 当前会话实际调用已连接StockWatcher的research_get_snapshot（指定三公司、full=false）成功，isError=false；三家公司均version2，说明研究工具可读，不代表周期任务已执行。此只读调用未提交更新、未发送消息；文档差异检查git diff --check通过，业务代码未改，不重复完整pytest或重部署。
+
+## 2026-11-07 网页在此设备保持登录30天
+
+- 操作者明确要求新增“在此设备保持登录30天”。登录表单增加默认不勾选的原生复选框，保留浏览器密码自动填充标记；未选仍8小时，勾选后Cookie与服务器签名会话均固定30天，访问页面不续期，旧8小时会话继续兼容。
+- 服务端仅接受remember=1或缺省，拒绝重复/其他值；签名会话仅认可8小时与30天两个期限。退出CSRF按已验签会话期限签发且绑定该会话，长期登录原页面8小时后仍可退出，过期后拒绝。Secure/HttpOnly/SameSite=Strict、同源、CSRF及失败限流保留，凭证轮换同时使两种旧会话失效。
+- 实际Python 3.12.12；`.venv/Scripts/python.exe -m pytest -q tests/test_dashboard_browser_contract.py tests/test_dashboard_views.py`为16 passed；专项auth/api/browser合同为77 passed in 2.53s。完整`.venv/Scripts/python.exe -m pytest -q`为912 passed、2 skipped in 182.18s，两项跳过为本机symlink限制，Linux CI待核。本轮测试全程离线，不调用新闻、模型或微信。独立只读审查未发现阻断问题，git diff --check通过。
+- WEB_PORTAL.md同步期限与重新登录启用方式。保留此前未提交的无推送诊断与密码说明记录，仅暂存本功能进度；本功能不修改订阅、监控开关、模型预算、新闻等级或研究权限。已执行`tmp/deploy-current.py baseline`只读记录线上2e28e5b/schema6、配置/环境/研究/结构指纹与队列全空；生产HTTP验收待发布后完成，不声称真实浏览器或30天实时时间跨度验证。

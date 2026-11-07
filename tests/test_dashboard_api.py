@@ -48,10 +48,13 @@ def cookies(response):
     return '; '.join(value.split(';',1)[0] for key,value in response['headers'] if key=='Set-Cookie' and 'Max-Age=0' not in value)
 
 
-def login(app, next_path='/'):
+def login(app, next_path='/', *, remember=False):
     page = request(app)
-    return request(app,'/login','POST',fields={'username':'operator','password':'synthetic-password-for-tests',
-        'csrf':form_csrf(page),'next':next_path},cookie=cookies(page))
+    fields = {'username':'operator','password':'synthetic-password-for-tests',
+              'csrf':form_csrf(page),'next':next_path}
+    if remember:
+        fields['remember'] = '1'
+    return request(app,'/login','POST',fields=fields,cookie=cookies(page))
 
 
 def test_public_page_never_reads_or_discloses_private_data(portal):
@@ -145,3 +148,79 @@ def test_settings_secrets_are_not_in_repr_or_exception(monkeypatch):
     current = Settings.from_env()
     assert current.dashboard_password and current.dashboard_session_secret
     assert 'super-private' not in repr(current)
+
+
+def test_remember_option_is_unchecked_and_password_manager_hints_remain(portal):
+    app, _ = portal
+    page = request(app)
+    checkbox = re.search(r'<input\b(?=[^>]*\bname="remember")[^>]*>', page['body'])
+    assert checkbox is not None
+    assert 'type="checkbox"' in checkbox.group(0) and 'value="1"' in checkbox.group(0)
+    assert not re.search(r'\bchecked\b', checkbox.group(0))
+    assert '在此设备保持登录30天' in page['body']
+    assert 'autocomplete="username"' in page['body']
+    assert 'autocomplete="current-password"' in page['body']
+
+
+@pytest.mark.parametrize('remember,lifetime', [(False, 28800), (True, 2592000)])
+def test_session_cookie_expiry_matches_selected_duration_and_stays_secure(portal, remember, lifetime):
+    app, _ = portal
+    now = [1000]
+    app.dashboard.auth.clock = lambda: now[0]
+    signed = login(app, remember=remember)
+    assert signed['status'] == 303
+    header = next(value for key, value in signed['headers']
+                  if key == 'Set-Cookie' and value.startswith('sw_portal_session='))
+    assert f'Max-Age={lifetime};' in header
+    assert all(flag in header for flag in ('Secure', 'HttpOnly', 'SameSite=Strict', 'Path=/'))
+    session = cookies(signed)
+    now[0] = 1000 + lifetime - 1
+    private = request(app, cookie=session)
+    assert private['status'] == 200 and 'synthetic-private-member' in private['body']
+    assert not any(key == 'Set-Cookie' and value.startswith('sw_portal_session=')
+                   for key, value in private['headers'])
+    now[0] += 1
+    expired = request(app, cookie=session)
+    assert expired['status'] == 200 and '登录研究工作台' in expired['body']
+    assert 'synthetic-private-member' not in expired['body']
+
+
+@pytest.mark.parametrize('value', ['', '0', 'on', 'true', '30', '2592000'])
+def test_remember_option_rejects_unrecognized_values(portal, value):
+    app, _ = portal
+    page = request(app)
+    signed = request(app, '/login', 'POST', cookie=cookies(page), fields={
+        'username': 'operator', 'password': 'synthetic-password-for-tests',
+        'csrf': form_csrf(page), 'remember': value,
+    })
+    assert signed['status'] == 400
+    assert not any(key == 'Set-Cookie' and value.startswith('sw_portal_session=')
+                   for key, value in signed['headers'])
+
+
+def test_duplicate_remember_option_is_not_accepted(portal):
+    app, _ = portal
+    page = request(app)
+    raw = urlencode([
+        ('username', 'operator'), ('password', 'synthetic-password-for-tests'),
+        ('csrf', form_csrf(page)), ('remember', '1'), ('remember', '1'),
+    ]).encode()
+    assert request(app, '/login', 'POST', cookie=cookies(page), body=raw)['status'] == 400
+
+
+def test_remembered_login_can_logout_with_original_page_after_eight_hours(portal):
+    app, _ = portal
+    now = [1000]
+    app.dashboard.auth.clock = lambda: now[0]
+    session = cookies(login(app, remember=True))
+    original = request(app, cookie=session)
+    now[0] += 28801
+    assert 'synthetic-private-member' in request(app, cookie=session)['body']
+    out = request(app, '/logout', 'POST', cookie=session, fields={'csrf': form_csrf(original)})
+    assert out['status'] == 303 and ('Location', '/login') in out['headers']
+    for name in ('sw_portal_session', 'sw_portal_csrf'):
+        header = next(value for key, value in out['headers']
+                      if key == 'Set-Cookie' and value.startswith(name + '='))
+        assert all(flag in header for flag in ('Max-Age=0', 'Secure', 'HttpOnly', 'SameSite=Strict', 'Path=/'))
+    assert cookies(out) == ''
+    assert 'synthetic-private-member' not in request(app, cookie=cookies(out))['body']
